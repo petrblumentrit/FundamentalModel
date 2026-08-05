@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+# vstupni data portfolia (citliva, mimo repo)
+Data/

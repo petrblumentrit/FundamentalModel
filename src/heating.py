@@ -1,0 +1,124 @@
+"""Topny modul — krok 4 navrhu (NAVRH_MODELU.md).
+
+Fituje se na reziduich po odectu baze (y - B) v chladnem a mirnem obdobi:
+
+    P_topeni(t) = k(cas dne, typ dne) * g(T*) / COP(T)
+
+- pocitova teplota:  T_ef = T + a*I - b*v*(T_in - T)+   (T_in = 20 C)
+- dvoukanalovy filtr: T* = w*T_ef + (1-w)*EMA(T_ef; tau)
+  (rychly kanal = ekviterm, pomaly = vnitrni termostat pres setrvacnost budovy)
+- topna krivka:      g(T*) = s * ln(1 + exp((T_b - T*)/s))   (hladky hinge)
+- COP na okamzitou teplotu (vyparnik venku): COP(T) = max(1 + alpha*T, 0.2),
+  normalizace COP(0) = 1 — absolutni skala je v k
+- k(cas dne, typ dne) = Fourier (K_TOD harmonickych) + offsety typu dne;
+  pro dane nelinearni parametry je model linearni v k -> separabilni LS
+  (vnejsi nelinearni optimalizace jen pres 7 parametru)
+"""
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from scipy.optimize import least_squares
+
+K_TOD = 4        # harmonickych v k(cas dne)
+T_IN = 20.0      # vnitrni teplota pro vetrny clen [C]
+COP_FLOOR = 0.2
+N_DAYTYPES = 4
+
+# poradi nelinearnich parametru a jejich meze
+PARAM_NAMES = ["a", "b", "t_b", "s", "w", "tau", "alpha"]
+LOWER = np.array([0.0, 0.0, 10.0, 0.5, 0.0, 4.0, 0.0])
+UPPER = np.array([0.05, 0.03, 18.0, 6.0, 1.0, 120.0, 0.06])
+X0 = np.array([0.01, 0.005, 14.5, 2.5, 0.5, 36.0, 0.02])
+
+MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
+
+
+def softplus(z: np.ndarray, s: float) -> np.ndarray:
+    zs = z / s
+    return np.where(zs > 30, z, s * np.log1p(np.exp(np.clip(zs, -700, 30))))
+
+
+def t_effective(df: pd.DataFrame, a: float, b: float) -> np.ndarray:
+    dT = np.maximum(T_IN - df["temp"].to_numpy(), 0.0)
+    return df["temp"].to_numpy() + a * df["sun"].to_numpy() - b * df["wind"].to_numpy() * dT
+
+
+def t_star(df: pd.DataFrame, a: float, b: float, w: float, tau: float) -> np.ndarray:
+    """Dvoukanalova efektivni teplota na cele souvisle ose (EMA nelze na vyseku)."""
+    te = t_effective(df, a, b)
+    alpha_ema = 1.0 - np.exp(-0.25 / tau)  # 15min krok
+    smooth = pd.Series(te).ewm(alpha=alpha_ema, adjust=False).mean().to_numpy()
+    return w * te + (1.0 - w) * smooth
+
+
+def k_basis(df: pd.DataFrame) -> np.ndarray:
+    """[1, cos/sin harmonicky, dummy dt1..dt3] — sdileny tvar, offsety typu dne."""
+    tod = df["tod"].to_numpy()
+    wv = 2 * np.pi * np.outer(tod, np.arange(1, K_TOD + 1)) / 24.0
+    dt = df["daytype"].to_numpy()
+    dums = np.stack([(dt == k).astype(float) for k in range(1, N_DAYTYPES)], axis=1)
+    return np.hstack([np.ones((len(df), 1)), np.cos(wv), np.sin(wv), dums])
+
+
+def shape_term(df: pd.DataFrame, theta: np.ndarray) -> np.ndarray:
+    """g(T*)/COP pro dane nelinearni parametry theta (na cele ose df)."""
+    a, b, t_b, s, w, tau, alpha = theta
+    ts = t_star(df, a, b, w, tau)
+    cop = np.maximum(1.0 + alpha * df["temp"].to_numpy(), COP_FLOOR)
+    return softplus(t_b - ts, s) / cop
+
+
+def fit(df: pd.DataFrame, resid: np.ndarray, mask: np.ndarray) -> dict:
+    """df = cela souvisla osa; resid = y - B; mask = radky pro fit (bez chlazeni)."""
+    Phi = k_basis(df)
+    r = resid[mask]
+
+    def inner(theta):
+        H = shape_term(df, theta)
+        A = Phi[mask] * H[mask, None]
+        coef, *_ = np.linalg.lstsq(A, r, rcond=None)
+        return coef, r - A @ coef
+
+    def outer(theta):
+        return inner(theta)[1]
+
+    sol = least_squares(outer, X0, bounds=(LOWER, UPPER), diff_step=1e-3,
+                        x_scale=UPPER - LOWER, verbose=0)
+    k_coef, res = inner(sol.x)
+    out = dict(zip(PARAM_NAMES, sol.x))
+    out.update({
+        "k_coef": k_coef, "k_tod": K_TOD,
+        "rmse": float(np.sqrt(np.mean(res**2))),
+        "r2": float(1 - res.var() / r.var()),
+    })
+    return out
+
+
+def predict(df: pd.DataFrame, params: dict) -> np.ndarray:
+    theta = np.array([params[k] for k in PARAM_NAMES], float)
+    k_t = k_basis(df) @ params["k_coef"]
+    return k_t * shape_term(df, theta)
+
+
+def k_curve(daytype: int, params: dict, tod: np.ndarray | None = None) -> np.ndarray:
+    if tod is None:
+        tod = np.arange(0, 24, 0.25)
+    fake = pd.DataFrame({"tod": tod, "daytype": daytype})
+    return k_basis(fake) @ params["k_coef"]
+
+
+def save(params: dict, path: Path | None = None) -> Path:
+    path = path or MODEL_DIR / "heating_params.npz"
+    path.parent.mkdir(exist_ok=True)
+    np.savez(path, **params)
+    return path
+
+
+def load(path: Path | None = None) -> dict:
+    path = path or MODEL_DIR / "heating_params.npz"
+    raw = np.load(path, allow_pickle=False)
+    out = {k: raw[k] for k in raw.files}
+    for k in PARAM_NAMES + ["rmse", "r2"]:
+        out[k] = float(out[k])
+    return out
