@@ -19,6 +19,8 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import BSpline
 
+from etl import TZ
+
 K_PROFILE = 12  # harmonickych v dennim profilu
 K_PRAZ = 4      # harmonickych v prazdninove korekci
 KNOT_DAYS = 90  # rozestup uzlu urovnove spline
@@ -133,6 +135,8 @@ def predict(df: pd.DataFrame, params: dict) -> np.ndarray:
 def level_curve(dates: pd.DatetimeIndex, params: dict) -> np.ndarray:
     """Urovnova slozka (denni prumer baze pro Po-Ct mimo prazdniny)."""
     t0 = pd.Timestamp(params["t0"])
+    if dates.tz is not None:  # osa modelu je v lokalnich datech, ne v UTC
+        dates = dates.tz_convert(TZ).tz_localize(None)
     x = (dates - t0).days.to_numpy(float) + 0.5
     S = _spline_basis(x, params["span_days"])
     sl = _slices(params["span_days"])

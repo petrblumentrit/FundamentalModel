@@ -118,8 +118,8 @@ Dvě definice — vybrat podle použití:
 2. Explorace: scatter spotřeba × teplota po hodinách dne a typech dne; ověření mrtvého pásma; hrubý odhad T_b. ✅
 3. Bazální model z mírných dnů. ✅
 4. Topný modul (softplus + COP + dvoukanálový filtr), diagnostika volnou impulzní odezvou. ✅
-5. Chlazení, FVE, bateriový detekční test.
-6. Joint fit, výpočet očištěné spotřeby, analýza reziduí (odmrazování, mosty, anomálie).
+5. Chlazení, FVE, bateriový detekční test. ✅
+6. Joint fit, výpočet očištěné spotřeby, analýza reziduí (odmrazování, mosty, anomálie). ✅
 
 ## Stav vývoje
 
@@ -149,3 +149,57 @@ Výsledky: 225 mírných dnů (137 Po–Čt), RMSE 14,9 (≈ 2,5 % úrovně), R�
 **Výsledky:** chladné dny (průměr < 10 °C) RMSE 110,8 → 25,8; R² topného signálu 0,865. Topná křivka sedí na datech (mírná konvexita od COP), k(čas dne) dvouvrcholový (≈11:30 a 18:00, noc ~½ dne, neděle nejníž), nejchladnější týden (3.–12.1.2026, špičky > 1000) model kopíruje včetně nočních útlumů. Volná impulzní odezva zbytku: malá (±0,2 vs. topný sklon ~10/°C), se špičkami v násobcích 24 h (konfundace s denním profilem, návrh na ni upozorňoval) a mírně zápornou hodnotou v lagu 0 — žádná druhá výrazná časová škála, třetí kanál není potřeba; dořešit v joint fitu.
 
 **Další krok:** 5 — chlazení (zrcadlový softplus, kratší setrvačnost), FVE člen s časově proměnnou kapacitou, bateriový detekční test (distributed lag přes půlnoc).
+
+### 2026-08-05 — chlazení, FVE, baterie (krok 5)
+
+**Chlazení a FVE fitovány společně** (`src/cooling.py`, `src/pv.py`, `src/fit.py:fit_cooling_pv`) — návrh zakazuje odhadovat je za sebou, protože osvit je jejich sdílený regresor. Úloha zůstává separabilní: vnější nelineární optimalizace přes 7 parametrů tvaru, vnitřní lineární krok přes k_c (chlazení) a δ (přírůstky kapacity FVE). Vnitřní krok se řeší přes normální rovnice s Choleskiho rozkladem, takže omezená úloha má rozměr počtu koeficientů (~30), ne počtu řádků (160k) — jinak by každé vyhodnocení procházelo maticí 160k × 30.
+
+- **Chlazení**: T_bc = 19,0 °C, s_c = 1,3, w_c = 0,33, **τ_c = 40 h**, α_EER = 0,0024. Teplé dny (průměr > 20 °C) RMSE 58,1 → 14,9. Pozor: τ_c původně narazilo na horní mez 24 h — mez rozšířena na 72 h, výsledných 40 h je uvnitř. **Chlazení tedy není rychlejší než topení** (τ 84 h), jak návrh předpokládal; setrvačnost budovy je v obou směrech podobná, jen o něco kratší.
+- **FVE**: kapacita parametrizována jako počáteční úroveň + součet **nezáporných** rampových přírůstků po 90 dnech (omezení v lineárním kroku), takže kapacita může jen růst — instalace se neodinstalovávají. Bez penalizace vyšla kapacita jako schodiště, proto přidána penalizace prvních diferencí přírůstků (tempo instalací se mění hladce).
+- `a_c` (osvit v pocitové teplotě chlazení) i γ (teplotní derating panelů) skončily **na nule** — obojí je degenerované vůči FVE členu ve stejném regresoru; joint fit je jediné místo, kde se to dá rozdělit.
+
+**Baterie — detekční test** (`explore/battery_test.py`): cílen na hodiny 18–05, kdy FVE už nevyrábí, takže cokoliv, co tam osvit vysvětluje, je přesunutá energie. Impulzní odezva přes lagy 0–36 h (přes půlnoc) i roční vývoj večerní citlivosti.
+
+**Výsledek: efekt baterií není měřitelný.** Odezva v lagu 0 je −0,0027 a součet přes lagy 1–36 je −0,003 na W/m²; roční sklony večerní citlivosti (−0,006 / −0,011 / −0,002 / −0,006 / −0,002) jsou všechny v mezích šumu a **bez rostoucího trendu**, který by kopíroval instalace. Ani jedna z podmínek, které návrh stanovil jako důkaz měřitelnosti, není splněna.
+
+Test má prokazatelně sílu: pozitivní kontrola (stejný odhad na denních hodinách a reziduu bez odečtené FVE) najde známý efekt −0,016 na W/m², tedy 6× větší než ta hranice, na které bateriový signál mlčí. **Člen `D_bat` proto ve v1 vypuštěn** — spolu s ním odpadá stavový model SOC i hranice „solárního dne". Test opakovat, až portfolio vyroste o baterie nebo spotovou optimalizaci.
+
+### 2026-08-05 — joint fit a očištěná spotřeba (krok 6)
+
+**Joint fit** (`src/fit.py:joint`): warm start z kroků 1–5, nelineárních parametrů 14 (7 topení + 6 chlazení + γ), všechny koeficienty úrovní a profilů se řeší lineárně. Bazální blok na nelineárních parametrech nezávisí, takže se jeho návrh i Gramova matice počítají jednou a každé vyhodnocení staví jen bloky topení, chlazení a FVE (160k × 44 místo 160k × 174).
+
+**Celkově: RMSE 21,5 → 18,7, R² = 0,984.**
+
+Co joint fit přerozdělil — přesně ta systematická chyba, kvůli které ho návrh označuje za nevynechatelný:
+
+| parametr | staged | joint |
+|---|---|---|
+| topení `a` (osvit) | 0,0333 | 0,0260 |
+| topení T_b / s | 17,2 / 0,79 | 18,0 / 2,31 |
+| topení α (COP) | 0,0203 | 0,0107 |
+| chlazení T_bc / s_c | 19,0 / 1,34 | 18,2 / 2,30 |
+| **špičkový výkon FVE** | **26** | **63** |
+
+**Kapacita FVE se víc než zdvojnásobila** — sekvenční odhad ji podhodnocoval, protože osvitový člen topení odčerpával část solárního signálu. Sklon reziduí na osvit klesl z −0,017 na −0,004 na W/m² (o 75 %). Oba softplusy se rozšířily (s 0,8 → 2,3; s_c 1,3 → 2,3), což odpovídá „rozmazané bilanční teplotě" portfolia, kterou návrh předpokládal — staged fit je držel uměle ostré.
+
+**Nutná oprava při joint fitu:** penalizace hladkosti bazální úrovně musí růst s počtem řádků. Fit z ~200 mírných dnů má 21 600 řádků, joint fit 161 000, takže stejná konstanta je tu 7,5× slabší — úroveň se rozvlnila a začala chytat sezónnost, kterou má nést topení (přesně to, před čím návrh varuje). Po přeškálování je úroveň hladká.
+
+**Očištěná spotřeba** — obě definice z návrhu, normálové počasí z 15denně vyhlazené klimatologie (den v roce × čas dne, `src/normal.py`):
+
+| rok | měřeno | reziduálně | na normál |
+|---|---|---|---|
+| 2022 | 632,4 | 555,6 | 629,4 |
+| 2023 | 616,5 | 544,3 | 615,5 |
+| 2024 | 627,9 | 556,9 | 626,1 |
+| 2025 | 641,4 | 569,4 | 637,4 |
+| 2026 | 658,7 | 582,0 | 646,2 |
+
+Reziduální řada je po odečtení povětrnostních členů plochá (mizí sezónní chod), normálová si sezónnost ponechává — odstraňuje jen **anomálii** počasí, ne roční chod; to je záměr, ne chyba. Rok 2026 je částečný (do 4. 8.), takže jeho průměr není srovnatelný s celými roky.
+
+**Zbývající známé chyby v reziduích:**
+- **Prosinec RMSE 39,5** proti 13–20 ve zbytku roku — vánoční týden mezi svátky není modelovaný (svátky se mapují na neděli, ale celý blok 24. 12.–1. 1. má vlastní režim). Největší jednotlivá rezerva modelu.
+- Zbytkový sklon reziduí na teplotu +0,03/°C a na osvit −0,004/(W/m²) — malé, ale nenulové.
+- `b` (vítr) = 0 a `a_c` = 0, γ = 0 stále na mezích; vítr má smysl zkusit až po vážení více stanic.
+- Odmrazovací cykly tepelných čerpadel (hrb 0 až +5 °C) zůstávají neošetřené podle návrhu.
+
+**Další možné kroky:** kalendářní blok pro vánoční období; vážení více meteostanic (mělo by odemknout větrný člen); bayesovská varianta (PyMC) pro nejistoty parametrů; validace mimo vzorek (rok stranou).
