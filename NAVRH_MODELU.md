@@ -203,3 +203,34 @@ Reziduální řada je po odečtení povětrnostních členů plochá (mizí sez�
 - Odmrazovací cykly tepelných čerpadel (hrb 0 až +5 °C) zůstávají neošetřené podle návrhu.
 
 **Další možné kroky:** kalendářní blok pro vánoční období; vážení více meteostanic (mělo by odemknout větrný člen); bayesovská varianta (PyMC) pro nejistoty parametrů; validace mimo vzorek (rok stranou).
+
+### 2026-09-15 — validace mimo vzorek (krok 7)
+
+**Metoda** (`src/validate.py`, `explore/validation.py`): celý řetězec kroků 3–6 (báze z mírných dnů → topení → chlazení + FVE → joint fit) odhadnutý jen z **masky řádků**; regresory včetně setrvačnostních filtrů se stavějí na celé ose, do normálních rovnic vstupují jen trénovací řádky. Dva režimy, každý odpovídá na jinou otázku:
+
+- **vynechaný rok** (2023, 2024, 2025) — trénink = vše mimo testovaný rok. Úroveň i kapacita FVE mezeru překlenou penalizacemi, takže se testuje **struktura povětrnostní odezvy** (topná/chladicí křivka, setrvačnost, FVE) na roce, který model neviděl.
+- **dopředná** (2024, 2025, 2026) — trénink = vše před testovaným rokem. Úroveň i kapacita FVE za koncem tréninku **drží poslední hodnotu** (spline i rampy ořezané na rozsah tréninku), takže chyba obsahuje i neextrapolovaný trend — realistická situace predikce; bias se vykazuje zvlášť.
+
+**Výsledky** (RMSE 15min hodnot; in-sample = joint fit ze všech dat):
+
+| rok | in-sample | vynechaný rok | bias | dopředná | bias | dopředná bez biasu |
+|---|---|---|---|---|---|---|
+| 2023 | 18,0 | 20,6 | +8,5 | – | – | – |
+| 2024 | 18,9 | 19,8 | −3,6 | 22,8 | −9,5 | 20,7 |
+| 2025 | 20,3 | 24,0 | −9,7 | 21,8 | 0,0 | 21,8 |
+| 2026 (do 4. 8.) | 16,6 | – | – | 19,0 | −2,8 | 18,8 |
+
+R² mimo vzorek 0,978–0,985. Grafy 22 (měsíční RMSE), 23 (stabilita parametrů), 24 (průběh testovaných roků), 25 (úroveň a kapacita FVE po foldech).
+
+**Interpretace:**
+
+- **Struktura se nepřefituje.** Chyba bez biasu je 18,7–22 proti 18–20 in-sample. Parametry tvaru jsou přes foldy stabilní: T_b 17,5–18,0 °C, s 1,8–2,9, w 0,34–0,39, T_bc 17,1–18,7 °C, s_c 2,1–2,4, τ_c 35–43 h. Nejhůř určený je τ topení (63–87 h; dopředné foldy z 2–3 let dávají kratší hodnoty) — pomalý kanál potřebuje víc zim.
+- **Bias vynechaného roku je celý z přemostění úrovně**, ne z povětrnostních členů: P-spline s penalizací druhých diferencí přes roční mezeru přestřelí (minimum 2023 na 560 místo 570 → +8,5; letní hrb 2025 na 620 → −9,7, graf 25). Pro odhad chyby predikce je směrodatný dopředný režim.
+- **Dopředná predikce:** RMSE 19–23. Bias −9,5 v roce 2024 vzniká držením úrovně ze dna roku 2023 při tréninku jen ze dvou let; v letech 2025 a 2026 je bias 0 až −3. Mimo prosinec a leden je měsíční RMSE 15–19 proti 13–16 in-sample.
+- **Nález a oprava — koncová rampa FVE.** Dopředné foldy odhalily neidentifikovanou poslední rampu kapacity: v posledním čtvrtletí před koncem tréninku (říjen–prosinec, málo slunce) dostala skok +30 až +40 jednotek a špička FVE vyšla 97 místo 63 — v plném fitu (konec v srpnu) ji kotví letní slunce, v predikci z konce roku ne. Dvě opravy: (a) `pv.capacity_basis` počítá jen rampy pozorované v rozsahu celé, za koncem rozsahu kapacita drží; (b) penalizace tempa instalací `PV_SMOOTH` 0,05 → 5 (test 0,05 / 0,5 / 5 / 50: in-sample RMSE 18,66 → 18,68, dopředná 2026 20,0 → 19,0, špička 97 → 69; nad 5 už nic nepřidá). Plný fit se prakticky nemění (špička 63, parametry tvaru do ±0,1), kapacita je nyní hladká konkávní křivka místo schodů.
+
+**Zbývající chyby dopředného režimu:** leden 2026 (mrazová vlna: RMSE 29 vs 25 in-sample, špičky podhodnocené o ~30 — topná křivka za nejchladnějším T* v tréninku), prosinec (43–46 shodně ve všech režimech — chybějící vánoční blok nezávisí na tom, kolik dat model viděl), neextrapolovaný trend úrovně.
+
+**Závěr:** in-sample RMSE 18,7 není přefitování; realistická chyba predikce na rok dopředu je **19–22 (R² ≈ 0,98)** plus bias úrovně 0–10 podle vývoje trendu. Rezervy v pořadí velikosti: vánoční blok, extrapolace trendu úrovně (hold vs. lineární pokračování — validovat dopředně), lednové extrémy.
+
+**Další kroky:** vánoční kalendářní blok v bázi; pravidlo pro trend úrovně v predikci; bootstrap nejistot přes bloky týdnů; nová data po 4. 8. 2026 (další léto pro chlazení a FVE).

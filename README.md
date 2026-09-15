@@ -48,6 +48,7 @@ uv run python explore/heating_fit.py      # 4    topný modul
 uv run python explore/cooling_pv_fit.py   # 5    chlazení + FVE (společný fit)
 uv run python explore/battery_test.py     # 5    detekční test baterií
 uv run python explore/joint_fit.py        # 6    joint fit + očištěná spotřeba
+uv run python explore/validation.py       # 7    validace mimo vzorek (--plot-only z cache)
 ```
 
 Diagnostické grafy se ukládají do `explore/`, parametry do `models/`
@@ -65,3 +66,4 @@ společného fitu — pro produkční použití ty druhé).
 | `src/pv.py` | FVE: neklesající kapacita × osvit × teplotní derating |
 | `src/fit.py` | společné odhady přes moduly (sdílené regresory) a joint fit |
 | `src/normal.py` | klimatologie pro normálové podmínky |
+| `src/validate.py` | fit z části dat (maska řádků) pro validaci mimo vzorek |

@@ -3,3 +3,5 @@ __pycache__/
 .venv/
 # vstupni data portfolia (citliva, mimo repo)
 Data/
+# cache validacnich foldu (prekreslit: validation.py --plot-only)
+models/validace.pkl

@@ -28,10 +28,16 @@ def _days(df: pd.DataFrame, t0: pd.Timestamp) -> np.ndarray:
 
 
 def capacity_basis(df: pd.DataFrame, t0: pd.Timestamp, span_days: float) -> np.ndarray:
-    """[1, rampy] — C = basis @ delta je pri delta >= 0 neklesajici."""
-    x = _days(df, t0)
+    """[1, rampy] — C = basis @ delta je pri delta >= 0 neklesajici.
+
+    Jen rampy, ktere jsou v rozsahu (span_days) pozorovane cele: rampa
+    zachycena par dny na konci okna (typicky v prosinci, bez slunce) neni z dat
+    identifikovatelna a validace mimo vzorek ji ukazala jako skok +40 jednotek.
+    Za koncem rozsahu kapacita drzi posledni hodnotu.
+    """
+    x = np.minimum(_days(df, t0), span_days)
     cols = [np.ones(len(x))]
-    for j in np.arange(KNOT_DAYS, span_days, KNOT_DAYS):
+    for j in np.arange(KNOT_DAYS, span_days - KNOT_DAYS + 1e-6, KNOT_DAYS):
         cols.append(np.clip((x - j) / KNOT_DAYS, 0.0, 1.0))
     return np.column_stack(cols)
 

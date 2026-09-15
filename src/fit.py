@@ -44,7 +44,11 @@ def bounded_lstsq(A: np.ndarray, y: np.ndarray, lb: np.ndarray, ub: np.ndarray,
     return bounded_normal(A.T @ A, A.T @ y, lb, ub, penalty, ridge)
 
 
-PV_SMOOTH = 0.05  # penalizace zmen tempa instalaci FVE (relativne k A'A bloku)
+# penalizace zmen tempa instalaci FVE (relativne k A'A bloku). Puvodne 0.05;
+# validace mimo vzorek ukazala, ze posledni rampa pred koncem okna (v zime bez
+# slunce) dostava skok +30 jednotek — 5.0 ho potlaci, in-sample RMSE nemeni
+# (18.66 -> 18.68), dopredna chyba roku 2026 klesa 20.0 -> 19.0; vic uz nepomaha
+PV_SMOOTH = 5.0
 
 
 def _pv_penalty(n_c: int, n_p: int, gram_pv: float, lam: float) -> np.ndarray:
@@ -55,21 +59,32 @@ def _pv_penalty(n_c: int, n_p: int, gram_pv: float, lam: float) -> np.ndarray:
     return P
 
 
-def fit_cooling_pv(df: pd.DataFrame, resid: np.ndarray) -> tuple[dict, dict]:
-    """resid = y - B - P_topeni na cele ose; vraci (params_chlazeni, params_fve)."""
-    t0 = df.index[0]
-    span = float((df.index[-1] - t0).total_seconds() / 86400.0) + 1.0
+def fit_cooling_pv(df: pd.DataFrame, resid: np.ndarray,
+                   mask: np.ndarray | None = None) -> tuple[dict, dict]:
+    """resid = y - B - P_topeni na cele ose; vraci (params_chlazeni, params_fve).
+
+    mask = radky, ze kterych se odhaduje (validace mimo vzorek); regresory se
+    stavi na cele ose, protoze setrvacnostni filtry potrebuji souvislou historii.
+    Rozsah rampy FVE se bere jen z trenovacich radku — mimo nej kapacita drzi
+    posledni hodnotu.
+    """
+    if mask is None:
+        mask = np.ones(len(df), bool)
+    idx = df.index[mask]
+    t0 = idx[0]
+    span = float((idx[-1] - t0).total_seconds() / 86400.0) + 1.0
+    r = resid[mask]
     n_c = cooling.k_basis(df.head(1)).shape[1]
     n_p = pv.capacity_basis(df.head(1), t0, span).shape[1]
     lb = np.concatenate([np.full(n_c, -np.inf), np.zeros(n_p)])
     ub = np.full(n_c + n_p, np.inf)
 
     def inner(p):
-        A_pv = pv.design(df, p[-1], t0, span)
-        A = np.hstack([cooling.design(df, p[:-1]), A_pv])
+        A_pv = pv.design(df, p[-1], t0, span)[mask]
+        A = np.hstack([cooling.design(df, p[:-1])[mask], A_pv])
         pen = _pv_penalty(n_c, n_p, float(np.mean((A_pv * A_pv).sum(0))), PV_SMOOTH)
-        coef = bounded_lstsq(A, resid, lb, ub, penalty=pen)
-        return coef, resid - A @ coef
+        coef = bounded_lstsq(A, r, lb, ub, penalty=pen)
+        return coef, r - A @ coef
 
     lower = np.concatenate([cooling.LOWER, [0.0]])      # gamma >= 0
     upper = np.concatenate([cooling.UPPER, [0.01]])
@@ -83,14 +98,14 @@ def fit_cooling_pv(df: pd.DataFrame, resid: np.ndarray) -> tuple[dict, dict]:
     p_params = {"gamma": float(sol.x[-1]), "delta": coef[n_c:],
                 "t0": str(t0), "span_days": span, "knot_days": pv.KNOT_DAYS}
     stats = {"rmse": float(np.sqrt(np.mean(res**2))),
-             "r2": float(1 - res.var() / resid.var())}
+             "r2": float(1 - res.var() / r.var())}
     c_params.update(stats)
     p_params.update(stats)
     return c_params, p_params
 
 
 def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
-          max_nfev: int = 400) -> tuple[dict, dict, dict, dict]:
+          max_nfev: int = 400, mask: np.ndarray | None = None) -> tuple[dict, dict, dict, dict]:
     """Zaverecny spolecny fit vsech modulu (krok 6) s warm startem z kroku 1-5.
 
     Sekvencni odhad nechava po sdilenych regresorech (hlavne osvitu) systematicke
@@ -101,10 +116,16 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     Bazalni blok na nelinearnich parametrech nezavisi, takze se jeho navrh i
     Gramova matice pocitaji jednou; kazde vyhodnoceni pak stavi jen bloky
     topeni, chlazeni a FVE.
+
+    mask = radky pouzite pro odhad (validace mimo vzorek). Regresory vcetne
+    setrvacnostnich filtru se stavi na cele ose, do normalnich rovnic vstupuji
+    jen radky masky.
     """
-    y = df["baseload"].to_numpy()
+    if mask is None:
+        mask = np.ones(len(df), bool)
+    y = df["baseload"].to_numpy()[mask]
     t0_b = pd.Timestamp(bp["t0"]).date()
-    F = base.design(df, t0_b, bp["span_days"])
+    F = base.design(df, t0_b, bp["span_days"])[mask]
     p_F = F.shape[1]
     FtF, Fty = F.T @ F, F.T @ y
 
@@ -122,7 +143,7 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     # penalizace hladkosti urovne musi rust s poctem radku, jinak je tu proti
     # 161k radkum 7x slabsi nez pri fitu z ~200 mirnych dnu a uroven zacne
     # chytat sezonnost, kterou ma nest topeni (viz varovani v navrhu)
-    smooth = bp["smooth"] * len(df) / (float(bp["n_mild_days"]) * 96.0)
+    smooth = bp["smooth"] * int(mask.sum()) / (float(bp["n_mild_days"]) * 96.0)
     pen[sl_b["level"], sl_b["level"]] = smooth * (D2.T @ D2)
     D1 = np.diff(np.eye(n_p - 1), axis=0)
     pv_lo = p_F + n_h + n_c + 1
@@ -136,9 +157,9 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
 
     def blocks(q):
         th_h, th_c, gamma = q[:n_hp], q[n_hp:n_hp + n_cp], q[-1]
-        A_pv = pv.design(df, gamma, t0_p, span_p)
-        V = np.hstack([heating.k_basis(df) * heating.shape_term(df, th_h)[:, None],
-                       cooling.design(df, th_c), A_pv])
+        A_pv = pv.design(df, gamma, t0_p, span_p)[mask]
+        V = np.hstack([(heating.k_basis(df) * heating.shape_term(df, th_h)[:, None])[mask],
+                       cooling.design(df, th_c)[mask], A_pv])
         return V, float(np.mean((A_pv * A_pv).sum(0)))
 
     def inner(q):
