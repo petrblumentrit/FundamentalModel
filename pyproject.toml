@@ -1,0 +1,15 @@
+[project]
+name = "fundamental-forecast-model"
+version = "0.1.0"
+description = "Fundamentalni aditivni model spotreby elektricke energie portfolia"
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.10",
+    "numpy>=2.3",
+    "pandas>=2.3",
+    "scipy>=1.17",
+]
+
+[tool.uv]
+# repozitar je sada skriptu a modulu v src/, ne instalovatelny balik
+package = false
