@@ -12,6 +12,14 @@ nepusobi topeni ani chlazeni):
   typ dne; profil Po-Ct je bez konstanty (uroven nese spline), ostatni typy
   maji konstantni offset vuci Po-Ct
 - prazdniny: konstanta + kratka Fourierova korekce (letni skolni volno)
+- rano po volnu: pracovni den po vikendu/svatku ma do ~NIGHT_END h vlastni
+  rezim (noc z nedele na pondeli je jeste vikendova, prechod na pracovni
+  rezim probiha az behem rana). Aditivni clen z kubickych B-splin na
+  [0, NIGHT_END], v NIGHT_END plynule (hodnota i sklon) odezni na nulu.
+  Bez nej je profil Po-Ct kompromisem: pondelni noc model prestreluje o ~10,
+  noci Ut-Ct podstreluje o 2-5.
+- most: celodenni aditivni posun (konstanta + K_MOST harmonickych) — mosty
+  jsou typovane jako patek, ale byvaji o 20-40 nize (vybirane dovolene)
 """
 from pathlib import Path
 
@@ -30,6 +38,9 @@ N_DAYTYPES = 4  # 0 Po-Ct, 1 patek/most, 2 sobota, 3 nedele/svatek
 MILD_BAND = (14.0, 18.0)   # denni prumer T mirneho dne
 PREV_BAND = (12.5, 19.5)   # denni prumer T predchoziho dne (setrvacnost)
 SMOOTH = 500.0             # vaha penalizace druhych diferenci spline koeficientu
+NIGHT_END = 10.0           # [h] konec rana po volnu (diagnostika: odchylka mizi 8-9 h)
+NIGHT_KNOT = 2.0           # [h] rozestup uzlu ranniho clenu
+K_MOST = 2                 # harmonickych v korekci mostu
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 
@@ -46,6 +57,20 @@ def _spline_basis(x_days: np.ndarray, span_days: float) -> np.ndarray:
     return BSpline.design_matrix(x, t, 3).toarray()
 
 
+def _night_basis(tod: np.ndarray) -> np.ndarray:
+    """Kubicke B-spliny na [0, NIGHT_END]; posledni dve vynechane -> v NIGHT_END
+    je clen i jeho sklon nulovy, za nim nulovy uplne."""
+    inner = np.arange(0.0, NIGHT_END + 1e-9, NIGHT_KNOT)
+    t = np.concatenate([np.repeat(inner[0], 3), inner, np.repeat(inner[-1], 3)])
+    x = np.clip(tod, 0.0, NIGHT_END - 1e-9)
+    B = BSpline.design_matrix(x, t, 3).toarray()[:, :-2]
+    return B * (tod < NIGHT_END)[:, None]
+
+
+# uzlu + 2 kubickych B-splin, bez poslednich dvou
+N_NIGHT = len(np.arange(0.0, NIGHT_END + 1e-9, NIGHT_KNOT))
+
+
 def _n_spline(span_days: float) -> int:
     return len(np.arange(0.0, span_days + KNOT_DAYS, KNOT_DAYS)) + 2
 
@@ -59,6 +84,8 @@ def _slices(span_days: float) -> dict:
     for k in range(1, N_DAYTYPES):
         out[f"dt{k}"] = slice(i, i + 1 + 2 * K_PROFILE); i += 1 + 2 * K_PROFILE
     out["praz"] = slice(i, i + 1 + 2 * K_PRAZ); i += 1 + 2 * K_PRAZ
+    out["noc"] = slice(i, i + N_NIGHT); i += N_NIGHT
+    out["most"] = slice(i, i + 1 + 2 * K_MOST); i += 1 + 2 * K_MOST
     out["total"] = i
     return out
 
@@ -79,6 +106,13 @@ def design(df: pd.DataFrame, t0, span_days: float) -> np.ndarray:
         blocks.append(b)
     pz = df["prazdniny"].to_numpy(float)[:, None]
     blocks.append(np.hstack([pz, _fourier(tod, K_PRAZ) * pz]))
+    # rano pracovniho dne po vikendu nebo svatku; most ma vlastni celodenni
+    # clen (jinak by jeho celodenni propad stahl ranni clen pondeli)
+    most = df["most"].to_numpy()
+    after_off = (df["po_volnu"].to_numpy() & (dt <= 1) & ~most).astype(float)[:, None]
+    blocks.append(_night_basis(tod) * after_off)
+    mo = most.astype(float)[:, None]
+    blocks.append(np.hstack([mo, _fourier(tod, K_MOST) * mo]))
     return np.hstack(blocks)
 
 
@@ -160,6 +194,13 @@ def profile_curve(daytype: int, params: dict, prazdniny: bool = False,
         b = c[sl["praz"]]
         out = out + b[0] + _fourier(tod, K_PRAZ) @ b[1:]
     return out
+
+
+def night_curve(params: dict, tod: np.ndarray | None = None) -> np.ndarray:
+    """Ranni clen pracovniho dne po volnu (odchylka od profilu typu dne)."""
+    if tod is None:
+        tod = np.arange(0, 24, 0.25)
+    return _night_basis(tod) @ params["coef"][_slices(params["span_days"])["noc"]]
 
 
 def save(params: dict, path: Path | None = None) -> Path:

@@ -234,3 +234,47 @@ R² mimo vzorek 0,978–0,985. Grafy 22 (měsíční RMSE), 23 (stabilita parame
 **Závěr:** in-sample RMSE 18,7 není přefitování; realistická chyba predikce na rok dopředu je **19–22 (R² ≈ 0,98)** plus bias úrovně 0–10 podle vývoje trendu. Rezervy v pořadí velikosti: vánoční blok, extrapolace trendu úrovně (hold vs. lineární pokračování — validovat dopředně), lednové extrémy.
 
 **Další kroky:** vánoční kalendářní blok v bázi; pravidlo pro trend úrovně v predikci; bootstrap nejistot přes bloky týdnů; nová data po 4. 8. 2026 (další léto pro chlazení a FVE).
+
+### 2026-10-01 — simulace provozní predikce D+1 (krok 8)
+
+**Režim** (`src/backtest.py`, `explore/backtest.py`): v den D v 10:00 místního času se vydává predikce na celý den D+1 (96 × 15 min) z dat končících v D 09:00 (H-1; časové značky jsou začátky intervalů, poslední známý interval 08:45–09:00). Model se **každý den přefituje** z dat do cutoffu: bazální fit z mírných dnů + joint fit s warm startem nelineárních parametrů z předchozího dne (první den bloku celý řetězec kroků 3–6). Úroveň i kapacita FVE za cutoffem drží. Cutoff i vydání jsou na místních hodinách, i ve dny změny času. **Meteo je skutečně naměřené** (dokonalá předpověď počasí), v datech předpověď není — v provozu k chybě přibude chyba meteo předpovědi. Klouzavý poslední rok platných dat: cílové dny 4. 8. 2025 – 3. 8. 2026 (365 dní), 10 paralelních bloků, 35 min.
+
+Výstupy (mimo repo, `simulace/`): `predikce_D1.csv` (čas vydání, konec dat, skutečnost, složky báze/topení/chlazení/FVE, predikce), `parametry.csv` (parametry po dnech vydání), `predikce_D1.html` (offline interaktivní graf se zoomem, plotly.js vložený v souboru).
+
+**Výsledky:** RMSE 21,1, MAE 14,7, bias +0,2, MAPE 2,23 %, R² 0,981; denní průměry RMSE 15,5 (MAPE 1,6 %). Bez 23. 12. – 1. 1. RMSE 18,2 — shodné s in-sample. Odpovídá dopředné validaci (19–22).
+
+| měsíc | 08 | 09 | 10 | 11 | 12 | 01 | 02 | 03 | 04 | 05 | 06 | 07 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| RMSE | 14,0 | 13,2 | 18,3 | 23,4 | 42,6 | 26,5 | 17,1 | 14,7 | 18,0 | 16,9 | 14,5 | 14,6 |
+| bias | +2,7 | +1,9 | +8,5 | +12,8 | −8,1 | +9,8 | −7,5 | −3,5 | −4,6 | −7,7 | −0,1 | −2,1 |
+
+- **Vánoční blok** dominuje: všech 8 nejhorších dní je 23. 12. – 1. 1. (denní RMSE 53–94; 25. a 31. 12. chyba denního průměru ~80).
+- **Bias po měsících ±8–13** i při denním přefitu: podzim podstřeluje (+8,5 / +12,8), jaro přestřeluje (−5 až −8). Hypotéza (neověřeno): konec P-spline úrovně za cutoffem jen drží a nestíhá sezónní pohyb báze; stejně dobře může jít o strukturální chybu přechodových měsíců v topné křivce. Ověřit rozkladem biasu po hodinách dne a T*; kandidát na korekci je aditivní kotva úrovně z reziduí posledních dní před cutoffem.
+- **Parametry při denním přefitu stabilní:** T_b 17,3–18,0, w 0,36–0,39, τ 75–85 h, τ_c 34–40 h, špička FVE 56–78 (roste s létem).
+
+### 2026-10-01 — ráno po volnu, mosty, korekce z chyb predikce (kroky 8a, 8b)
+
+**Diagnostika** (rezidua plného fitu po hodinách dne): profil Po–Čt byl kompromis dvou nočních režimů — pondělní noc 0–5 h o 7–10 níž než model, noci Út–Čt o 2–5 výš; v pondělí odchylka doznívá v 8–9 h. Typ dne se láme o půlnoci, ale **režim se mění až během rána** (noc z neděle na pondělí je ještě víkendová). Pátek a sobota bez systematiky. Pracovní dny po svátku jsou o 20–40 níž celý den: mosty (pátek po čtvrtečním svátku, lidé si berou volno) a 27. 12. / 2. 1. (Vánoce).
+
+**8a — báze** (`src/base.py`, `src/etl.py`):
+- ETL: příznak `po_volnu` (předchozí kalendářní den víkend/svátek, z kalendáře, ne z řádků dat) a `most`.
+- **Ranní člen po volnu**: pracovní den po víkendu/svátku dostane aditivní člen z kubických B-splin na 0–10 h (6 parametrů), v 10 h plynule odezní (hodnota i sklon nulové). Odpovídá myšlence posuzovat noční a denní režim zvlášť, ale úsporně — denní profily zůstávají, přidává se jen přechod. Odhad: −12 až −15 v noci, −7 až −9 v 4–8 h, 0 od 10 h.
+- **Most**: celodenní aditivní posun (konstanta + 2 harmonické); bez něj celodenní propad mostů stahoval ranní člen pondělí. Vyšel hluboký (až −73), protože 2 ze 7 mostů jsou vánoční (27. 12. 2024, 2. 1. 2026) — rozdělí ho až vánoční blok.
+- In-sample RMSE 18,68 → 18,26; po hodinách je pondělní i úterní–čtvrteční noc ±1.
+
+**8b — korekce z chyb dřívějších predikcí** (`src/correction.py`): chyba predikce je silně setrvačná (autokorelace denního biasu 0,77). Samostatná aditivní vrstva nad uloženými predikcemi, fyziku modelu nemění. V D 10:00 pro cíl D+1: x1 = průměrná chyba dne D−1, x2 = průměrná chyba rána D do 09:00, x3 = tvar chyby podle času dne (odchylka od denního průměru za posledních 7 pravidelných dní); korekce = a·x1 + b·x2 + c·x3. Koeficienty **online** (LS s ridge, jen z cílových dní, jejichž chyba byla v okamžiku vydání známá; prvních 21 dní bez korekce). Ustálené a ≈ 0,54, b ≈ 0,2, c ≈ 0,8.
+- **Nepravidelné dny** (svátky, mosty, 21. 12. – 3. 1.) se jako zdroj korekce nepoužívají a neodhadují koeficienty; místo nich poslední pravidelný den. Bez toho se anomálie svátků přenášela do dalších dní (3.–4. 1. 2026 RMSE 66). Užší okno 24. 12. – 1. 1. by v prosinci pomohlo díky setrvačnosti uvnitř Vánoc (Vánoce 42 vs 61), ale mimo Vánoce je horší (14,65 vs 14,40) — Vánoce má řešit vlastní blok v modelu, ne korekce.
+
+**Výsledky backtestu** (RMSE 15min; Vánoce = cílové dny 21. 12. – 3. 1.):
+
+| | celý rok | mimo Vánoce | Vánoce |
+|---|---|---|---|
+| v1 model | 21,10 | 17,86 | 60,1 |
+| v1 + korekce | 18,51 | 14,37 | 61,3 |
+| **v2 model** (ranní člen + most) | 20,84 | 17,73 | 58,7 |
+| **v2 + korekce** | **18,29** | **14,32** | 59,9 |
+
+- Ranní člen: bias 0–6 h v pondělí −12,4 → −4,5 (stejně jako ostatní dny), RMSE pondělí 0–9 h 17,0 → 14,3. Na celkovém RMSE malý (týká se 1/7 dní, 9 h).
+- Korekce: −2,6 RMSE celkem, −3,4 mimo Vánoce; nejvíc pomáhá v listopadu (23,0 → 15,9) a lednu (24,5 → 20,5), kde model drží úroveň za cutoffem.
+- Oba kroky se doplňují: korekce tvaru (x3) je průměr přes týden a typ dne nerozliší — na v1 nechávala pondělní noc −6,4 a středeční +5,7; na v2 jsou všechny dny ±2.
+- **Zbývá společný noční bias všech dní** (model −3 až −6 v 0–6 h; korekce ho odstraní): sezónní změna tvaru profilu (květen −15, leden +9 na v1), kandidát na krok 3 z plánu — nejdřív ověřit, zda nesedí v nočním poměru topného k(čas dne).

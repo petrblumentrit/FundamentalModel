@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Predikce D+1 — backtest</title>
+<script>/*__PLOTLY__*/</script>
+<style>
+:root {
+  color-scheme: light;
+  --surface: #fcfcfb; --surface-2: #f3f2ef; --border: #e1e0d9;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+  --grid: #e1e0d9; --baseline: #c3c2b7;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface: #1a1a19; --surface-2: #242423; --border: #383835;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #333331; --baseline: #52514e;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1a1a19; --surface-2: #242423; --border: #383835;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+  --grid: #333331; --baseline: #52514e;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface); color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1400px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 20px; margin: 0 0 4px; font-weight: 600; }
+.sub { color: var(--text-secondary); margin: 0 0 20px; max-width: 900px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.tile { background: var(--surface-2); border-radius: 8px; padding: 12px 14px; }
+.tile .k { color: var(--text-secondary); font-size: 12px; }
+.tile .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .m { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.controls span { color: var(--text-secondary); font-size: 12px; margin-right: 4px; }
+button { font: inherit; font-size: 13px; color: var(--text-primary); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--text-muted); }
+button[aria-pressed="true"] { border-color: var(--text-primary); }
+button:disabled { opacity: 0.4; cursor: default; }
+.controls .window { margin-left: 8px; color: var(--text-primary); font-size: 13px; font-variant-numeric: tabular-nums; }
+#chart { width: 100%; height: 620px; }
+.legend { display: flex; gap: 6px; margin: 0 0 4px; flex-wrap: wrap; align-items: center; }
+.legend > span { color: var(--text-secondary); font-size: 12px; margin-right: 4px; }
+.legend button[aria-pressed="false"] { color: var(--text-muted); border-style: dashed; }
+.legend button[aria-pressed="false"] i { opacity: 0.3; }
+.legend i { display: inline-block; width: 16px; height: 2px; vertical-align: middle; margin-right: 6px; }
+.grid2 { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-top: 24px; }
+@media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } #chart { height: 520px; } }
+h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+th, td { padding: 5px 8px; text-align: right; border-bottom: 1px solid var(--border); }
+th { color: var(--text-secondary); font-weight: 500; }
+th:first-child, td:first-child { text-align: left; }
+.worst button { width: 100%; display: flex; justify-content: space-between; margin-bottom: 6px; }
+.note { color: var(--text-muted); font-size: 12px; margin-top: 16px; }
+.wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Predikce spotřeby D+1: klouzavý backtest</h1>
+  <p class="sub" id="sub"></p>
+  <div class="tiles" id="tiles"></div>
+  <div class="controls" id="ranges"><span>Rozsah:</span></div>
+  <div class="controls">
+    <button type="button" id="prev" title="Posunout okno zpět o jeho šířku (šipka vlevo)">◀ Předchozí</button>
+    <button type="button" id="next" title="Posunout okno vpřed o jeho šířku (šipka vpravo)">Další ▶</button>
+    <button type="button" id="pan" aria-pressed="false" title="Tah myší posouvá okno místo přiblížení">Posun tahem</button>
+    <span id="window" class="window"></span>
+  </div>
+  <div class="legend" id="legend"><span>Zobrazit:</span></div>
+  <div id="chart"></div>
+  <div class="grid2">
+    <div class="wrap">
+      <h2>Po měsících</h2>
+      <table id="monthly"><thead><tr><th>Měsíc</th><th>RMSE model</th><th>RMSE s korekcí</th><th>Bias model</th><th>Bias s korekcí</th><th>MAPE % s korekcí</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div class="worst">
+      <h2>Nejhorší dny (RMSE s korekcí), kliknutím přiblížit</h2>
+      <div id="worst"></div>
+    </div>
+  </div>
+  <p class="note">Model se každý den D přefituje z dat do D 09:00 a v 10:00 vydá predikci na celý den D+1 (15min).
+    Korekce = reziduová vrstva z chyb dřívějších predikcí známých v D 10:00 (celý den D−1, ráno dne D do 09:00,
+    tvar chyby podle času dne za posledních 7 dní); koeficienty se odhadují online jen z minulosti.
+    Meteo je skutečně naměřené (dokonalá předpověď počasí), takže chyba neobsahuje chybu meteo předpovědi.
+    Bias &gt; 0 znamená, že model podstřeluje. Tahem myší přiblížíte (nebo s „Posun tahem“ posunete), dvojklik vrátí zvolený rozsah.
+    ◀ / ▶ i šipky na klávesnici posunou okno o jeho šířku: týden o týden, přiblížený úsek o svou délku.</p>
+</main>
+<script>
+const D = /*__DATA__*/null;
+const fmt = (v, d = 1) => v.toLocaleString("cs-CZ", { minimumFractionDigits: d, maximumFractionDigits: d });
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+document.getElementById("sub").textContent =
+  `Cílové dny ${D.od} až ${D.do} (${D.dni} dní). Vydání vždy v D 10:00 z dat končících v D 09:00.`;
+
+// dlazdice: velke cislo = predikce s korekci, pod nim samotny model
+const M = D.total.model, K = D.total.kor;
+const tiles = [["RMSE", fmt(K.rmse), fmt(M.rmse)], ["MAE", fmt(K.mae), fmt(M.mae)], ["Bias", fmt(K.bias), fmt(M.bias)],
+  ["MAPE", fmt(K.mape, 2) + " %", fmt(M.mape, 2) + " %"], ["R²", fmt(K.r2, 3), fmt(M.r2, 3)], ["Dní", String(D.dni), null]];
+const tEl = document.getElementById("tiles");
+for (const [k, v, m] of tiles) {
+  const d = document.createElement("div"); d.className = "tile";
+  const a = document.createElement("div"); a.className = "k"; a.textContent = m ? k + " s korekcí" : k;
+  const b = document.createElement("div"); b.className = "v"; b.textContent = v;
+  d.append(a, b);
+  if (m) { const c = document.createElement("div"); c.className = "m"; c.textContent = "model bez korekce: " + m; d.append(c); }
+  tEl.append(d);
+}
+
+const tb = document.querySelector("#monthly tbody");
+for (const m of D.monthly) {
+  const tr = document.createElement("tr");
+  for (const v of [m.mesic, fmt(m.model.rmse), fmt(m.kor.rmse), fmt(m.model.bias), fmt(m.kor.bias), fmt(m.kor.mape, 2)]) {
+    const td = document.createElement("td"); td.textContent = v; tr.append(td);
+  }
+  tb.append(tr);
+}
+
+// casy jsou mistni retezce "YYYY-MM-DD HH:MM"; samotne datum by Date bral jako UTC
+const parse = s => new Date(s.length <= 10 ? s + "T00:00" : s.replace(" ", "T"));
+const p2 = x => String(x).padStart(2, "0");
+const fmtT = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+const addDays = (s, n) => { const d = parse(s); d.setDate(d.getDate() + n); return fmtT(d); };
+// okno zarovnane na pulnoci: konec = pulnoc po poslednim dni dat
+const startX = D.t[0].slice(0, 10) + " 00:00";
+const endX = addDays(D.t[D.t.length - 1].slice(0, 10) + " 00:00", 1);
+const ranges = [["1 den", 1], ["1 týden", 7], ["1 měsíc", 30], ["3 měsíce", 91], ["Celý rok", null]];
+let current = [addDays(endX, -30), endX];   // vychozi okno (dvojklik se k nemu vraci)
+let view = current.slice();                 // prave zobrazene okno
+
+let panMode = false;
+function layout() {
+  const ink = css("--text-secondary"), muted = css("--text-muted"), grid = css("--grid"), base = css("--baseline");
+  const ax = { gridcolor: grid, linecolor: base, zerolinecolor: base, tickfont: { color: muted, size: 11 },
+    title: { font: { color: ink, size: 12 } } };
+  return {
+    paper_bgcolor: css("--surface"), plot_bgcolor: css("--surface"),
+    font: { family: "system-ui, -apple-system, Segoe UI, sans-serif", color: css("--text-primary") },
+    margin: { l: 56, r: 16, t: 8, b: 36 }, showlegend: false, hovermode: "x unified",
+    hoverlabel: { bgcolor: css("--surface-2"), bordercolor: css("--border"), font: { color: css("--text-primary") } },
+    dragmode: panMode ? "pan" : "zoom",
+    xaxis: { ...ax, range: view, showspikes: true, spikemode: "across", spikethickness: 1,
+      spikecolor: muted, spikedash: "solid", anchor: "y2", hoverformat: "%d.%m.%Y %H:%M",
+      tickformatstops: [{ dtickrange: [null, 86400000], value: "%H:%M<br>%d.%m.%Y" },
+                        { dtickrange: [86400000, null], value: "%d.%m.<br>%Y" }] },
+    // osy y se dopocitavaji z viditelnych dat (fitY) — zoom i posun jen ve smeru x
+    yaxis: { ...ax, domain: [0.3, 1], title: { ...ax.title, text: "Spotřeba" }, fixedrange: true },
+    yaxis2: { ...ax, domain: [0, 0.22], title: { ...ax.title, text: "Chyba" }, zeroline: true, zerolinewidth: 1,
+      fixedrange: true },
+  };
+}
+// serie: klic dat, popisek, barva, panel (y2 = chyby), vychozi viditelnost
+const SERIES = [
+  ["y", "Skutečnost", "--series-1", "y", true],
+  ["f", "Model", "--series-2", "y", true],
+  ["k", "Model + korekce", "--series-3", "y", true],
+  ["e", "Chyba modelu", "--series-2", "y2", false],
+  ["ek", "Chyba s korekcí", "--series-3", "y2", true],
+];
+const vis = SERIES.map(s => s[4]);
+function traces() {
+  return SERIES.map(([key, name, color, ax], i) => ({
+    x: D.t, y: D[key], name, type: "scattergl", mode: "lines", yaxis: ax, visible: vis[i],
+    customdata: key === "f" || key === "k" ? D.vydano : undefined,
+    line: { color: css(color), width: ax === "y" ? 1.6 : 1.2 },
+    hovertemplate: ax === "y2" ? "%{y:+.1f}" : (key === "y" ? "%{y:.1f}" : "%{y:.1f} (vydáno %{customdata})"),
+  }));
+}
+const el = document.getElementById("chart");
+Plotly.newPlot(el, traces(), layout(), { responsive: true, displaylogo: false, locale: "cs",
+  modeBarButtonsToRemove: ["select2d", "lasso2d", "autoScale2d"], doubleClick: false });
+
+function fitY(a, b) {
+  // osy y jen na viditelna data (autorange by bral cely rok)
+  let lo = Infinity, hi = -Infinity, elo = Infinity, ehi = -Infinity;
+  const top = SERIES.filter((s, i) => vis[i] && s[3] === "y").map(s => D[s[0]]);
+  const bot = SERIES.filter((s, i) => vis[i] && s[3] === "y2").map(s => D[s[0]]);
+  for (let i = 0; i < D.t.length; i++) {
+    if (D.t[i] < a || D.t[i] > b) continue;
+    for (const v of top) { lo = Math.min(lo, v[i]); hi = Math.max(hi, v[i]); }
+    for (const v of bot) { elo = Math.min(elo, v[i]); ehi = Math.max(ehi, v[i]); }
+  }
+  const upd = {};
+  if (lo < hi) { const p = (hi - lo) * 0.05; upd["yaxis.range"] = [lo - p, hi + p]; }
+  if (elo <= ehi) { const m = Math.max(Math.abs(elo), Math.abs(ehi), 1) * 1.08; upd["yaxis2.range"] = [-m, m]; }
+  if (Object.keys(upd).length) Plotly.relayout(el, upd);
+}
+function setRange(r) {
+  current = r;
+  Plotly.relayout(el, { "xaxis.range": r });
+}
+el.on("plotly_doubleclick", () => setRange(current));
+el.on("plotly_relayout", ev => {
+  let r = null;
+  if (ev["xaxis.range[0]"]) r = [ev["xaxis.range[0]"], ev["xaxis.range[1]"]];
+  else if (ev["xaxis.range"]) r = ev["xaxis.range"];
+  else if (ev["xaxis.autorange"]) r = [startX, endX];
+  if (!r) return;
+  view = [String(r[0]), String(r[1])];
+  fitY(view[0], view[1]);
+  showWindow();
+});
+
+// posun okna o jeho vlastni sirku; cele dny se posouvaji kalendarne (zmena casu
+// ma 23/25 h, posun v milisekundach by okno rozhodil o hodinu)
+function shift(dir) {
+  const a = parse(view[0]), b = parse(view[1]);
+  const days = (b - a) / 864e5, whole = Math.round(days);
+  let na, nb;
+  if (whole >= 1 && Math.abs(days - whole) < 0.05) {
+    na = parse(view[0]); na.setDate(na.getDate() + dir * whole);
+    nb = parse(view[1]); nb.setDate(nb.getDate() + dir * whole);
+  } else {
+    na = new Date(+a + dir * (b - a)); nb = new Date(+b + dir * (b - a));
+  }
+  // na okraji dat zastavit, sirku okna zachovat
+  const lo = parse(startX), hi = parse(endX);
+  if (nb > hi) { na = new Date(+hi - (b - a)); nb = hi; }
+  if (na < lo) { na = lo; nb = new Date(+lo + (b - a)); }
+  if (+na === +a) return;
+  setRange([fmtT(na), fmtT(nb)]);
+}
+function showWindow() {
+  const a = parse(view[0]), b = new Date(+parse(view[1]) - 1);
+  const d = x => `${p2(x.getDate())}.${p2(x.getMonth() + 1)}.${x.getFullYear()}`;
+  const t = x => `${p2(x.getHours())}:${p2(x.getMinutes())}`;
+  const whole = a.getHours() === 0 && a.getMinutes() === 0 && b.getHours() === 23 && b.getMinutes() === 59;
+  document.getElementById("window").textContent = whole
+    ? (d(a) === d(b) ? d(a) : `${d(a)} – ${d(b)}`)
+    : `${d(a)} ${t(a)} – ${d(b)} ${t(new Date(+b + 1))}`;
+  document.getElementById("prev").disabled = a <= parse(startX);
+  document.getElementById("next").disabled = +b + 1 >= +parse(endX);
+}
+document.getElementById("prev").onclick = () => shift(-1);
+document.getElementById("next").onclick = () => shift(1);
+const panBtn = document.getElementById("pan");
+panBtn.onclick = () => {
+  panMode = !panMode;
+  panBtn.setAttribute("aria-pressed", String(panMode));
+  Plotly.relayout(el, { dragmode: panMode ? "pan" : "zoom" });
+};
+document.addEventListener("keydown", e => {
+  if (e.altKey || e.ctrlKey || e.metaKey || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  if (e.key === "ArrowLeft") { shift(-1); e.preventDefault(); }
+  if (e.key === "ArrowRight") { shift(1); e.preventDefault(); }
+});
+const lEl = document.getElementById("legend");
+SERIES.forEach(([, name, color], i) => {
+  const b = document.createElement("button"); b.type = "button";
+  b.setAttribute("aria-pressed", String(vis[i]));
+  const sw = document.createElement("i"); sw.style.background = `var(${color})`;
+  b.append(sw, document.createTextNode(name));
+  b.onclick = () => {
+    vis[i] = !vis[i]; b.setAttribute("aria-pressed", String(vis[i]));
+    Plotly.restyle(el, { visible: vis[i] }, [i]);
+    fitY(view[0], view[1]);
+  };
+  lEl.append(b);
+});
+fitY(view[0], view[1]);
+showWindow();
+
+const rEl = document.getElementById("ranges");
+const btns = [];
+for (const [label, n] of ranges) {
+  const b = document.createElement("button"); b.textContent = label; b.type = "button";
+  b.setAttribute("aria-pressed", n === 30 ? "true" : "false");
+  b.onclick = () => {
+    btns.forEach(x => x.setAttribute("aria-pressed", "false")); b.setAttribute("aria-pressed", "true");
+    setRange(n ? [addDays(endX, -n), endX] : [startX, endX]);
+  };
+  btns.push(b); rEl.append(b);
+}
+
+const wEl = document.getElementById("worst");
+for (const w of D.worst) {
+  const b = document.createElement("button"); b.type = "button";
+  const a = document.createElement("span"); a.textContent = w.den;
+  const c = document.createElement("span"); c.textContent = "RMSE " + fmt(w.rmse);
+  b.append(a, c);
+  b.onclick = () => { btns.forEach(x => x.setAttribute("aria-pressed", "false"));
+    setRange([addDays(w.den, -1), addDays(w.den, 2)]);
+    el.scrollIntoView({ behavior: "smooth", block: "center" }); };
+  wEl.append(b);
+}
+
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () =>
+  Plotly.react(el, traces(), layout()));
+</script>
+</body>
+</html>

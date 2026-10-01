@@ -44,9 +44,14 @@ def load(with_local_time: bool = True) -> pd.DataFrame:
         df.loc[df["dow"] == 5, "daytype"] = 2
         df.loc[(df["dow"] == 6) | is_holiday, "daytype"] = 3
         # mosty: pracovni den sevreny mezi svatkem a vikendem/svatkem
-        df.loc[dates.isin(_bridges(holidays)), "daytype"] = 1
+        df["most"] = dates.isin(_bridges(holidays)).to_numpy()
+        df.loc[df["most"], "daytype"] = 1
         # letni prazdniny (dominantni skolni volno)
         df["prazdniny"] = loc.month.isin([7, 8])
+        # predchozi kalendarni den volny (vikend/svatek) — rezim noci se meni az
+        # behem rana, ne o pulnoci (pondelni noc je jeste vikendova)
+        prev = pd.Series(pd.to_datetime(dates) - pd.Timedelta(days=1), index=df.index)
+        df["po_volnu"] = ((prev.dt.dayofweek >= 5) | prev.dt.date.isin(holidays)).to_numpy()
     return df
 
 

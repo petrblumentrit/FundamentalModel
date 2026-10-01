@@ -49,7 +49,11 @@ uv run python explore/cooling_pv_fit.py   # 5    chlazení + FVE (společný fit
 uv run python explore/battery_test.py     # 5    detekční test baterií
 uv run python explore/joint_fit.py        # 6    joint fit + očištěná spotřeba
 uv run python explore/validation.py       # 7    validace mimo vzorek (--plot-only z cache)
+uv run python explore/backtest.py         # 8    simulace predikce D+1 za posledni rok (--plot-only)
 ```
+
+Výsledky simulace predikce (CSV + offline interaktivní HTML graf) jdou do
+`simulace/` (mimo repozitář, obsahují data portfolia).
 
 Diagnostické grafy se ukládají do `explore/`, parametry do `models/`
 (`*_params.npz` ze sekvenčního odhadu, `*_joint.npz` ze závěrečného
@@ -67,3 +71,5 @@ společného fitu — pro produkční použití ty druhé).
 | `src/fit.py` | společné odhady přes moduly (sdílené regresory) a joint fit |
 | `src/normal.py` | klimatologie pro normálové podmínky |
 | `src/validate.py` | fit z části dat (maska řádků) pro validaci mimo vzorek |
+| `src/backtest.py` | simulace provozní predikce D+1 (denní přefit z dat do D 09:00) |
+| `src/correction.py` | korekce predikce D+1 z chyb dřívějších predikcí (online, reziduová vrstva) |
