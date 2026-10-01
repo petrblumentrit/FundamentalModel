@@ -51,6 +51,7 @@ uv run python explore/joint_fit.py        # 6    joint fit + očištěná spotř
 uv run python explore/validation.py       # 7    validace mimo vzorek (--plot-only z cache)
 uv run python explore/backtest.py         # 8    simulace predikce D+1 za posledni rok (--plot-only)
 uv run python explore/svetlo_test.py      # 9    test spotreby rizene svetlem (zmena casu)
+uv run python explore/zd_analyza.py       # 14   srovnani s domacnostmi PRE (data OTE v Analyza/)
 ```
 
 Výsledky simulace predikce (CSV + offline interaktivní HTML graf) jdou do
@@ -74,4 +75,5 @@ společného fitu — pro produkční použití ty druhé).
 | `src/validate.py` | fit z části dat (maska řádků) pro validaci mimo vzorek |
 | `src/backtest.py` | simulace provozní predikce D+1 (denní přefit z dat do D 09:00) |
 | `src/sun.py` | poloha slunce a tma (astronomicky) pro člen osvětlení |
+| `src/ote.py` | načítání dat OTE (zbytkové diagramy, KZD, přepočtené TDD) z `Analyza/` |
 | `src/correction.py` | korekce predikce D+1 z chyb dřívějších predikcí (online, reziduová vrstva) |

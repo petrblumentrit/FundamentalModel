@@ -128,11 +128,20 @@ fig.savefig(OUT / "21_ocistena_spotreba.png", dpi=130, bbox_inches="tight")
 # --- 28. casova zmena topne citlivosti ---
 k_mean = float(np.mean(heating.k_basis(df) @ hp["k_coef"]))
 rel = 100 * heating.trend_curve(days, hp) / k_mean
-fig, ax = plt.subplots(figsize=(10, 4.2))
+fig, (ax, a2) = plt.subplots(1, 2, figsize=(14, 4.2), gridspec_kw={"width_ratios": [1.6, 1]})
 ax.plot(days, rel, color=ORANGE, lw=2)
 ax.axhline(0, color=BASELINE, lw=1)
 ax.set_ylabel("změna topné citlivosti [% průměrného k]")
-ax.set_title("Topná citlivost v čase (tepelná čerpadla − zateplování; za koncem dat drží)", loc="left")
+ax.set_title("Topná citlivost v čase (průměr přes den; za koncem dat drží)", loc="left")
+tod_g = np.arange(0, 24, 0.25)
+k0 = heating.k_curve(0, hp, tod_g)
+for frac, col, lab in ((0.5, MUTED, "v polovině období"), (1.0, ORANGE, "na konci dat")):
+    when = days[int(frac * (len(days) - 1))]
+    a2.plot(tod_g, 100 * heating.trend_profile(when, hp, tod_g) / k_mean, color=col, lw=2, label=lab)
+a2.plot(tod_g, 100 * (k0 - k0.mean()) / k_mean * 0 + 0, color=BASELINE, lw=1)
+a2.set_xticks(range(0, 25, 3)); a2.set_xlabel("místní čas [h]")
+a2.set_title("Denní tvar přírůstku (Po–Čt)", loc="left")
+a2.legend(frameon=False)
 fig.savefig(OUT / "28_topeni_trend.png", dpi=130, bbox_inches="tight")
 loc_days = days.tz_convert(etl.TZ)
 zimy = {f"{y}/{y + 1 - 2000:02d}": float(rel[((loc_days.year == y) & (loc_days.month >= 11))

@@ -37,6 +37,7 @@ import validate
 ISSUE_HOUR = 10   # vydani predikce v D [h, mistni cas]
 CUTOFF_HOUR = 9   # konec dostupnych dat v D (H-1)
 SHAPE_REFIT_DOW = 0   # den vydani s plnym (nelinearnim) prefitem, 0 = pondeli
+HOLIDAY_CONTEXT = 3   # [dny] okoli svatku, ktere se pri omezenem okne bere cele
 
 
 def _wall(day: pd.Timestamp, hour: int) -> pd.Timestamp:
@@ -48,8 +49,34 @@ def cutoff(issue_day: pd.Timestamp) -> pd.Timestamp:
     return _wall(issue_day, CUTOFF_HOUR)
 
 
-def train_mask(df: pd.DataFrame, issue_day: pd.Timestamp) -> np.ndarray:
-    return (df.index < cutoff(issue_day).tz_convert("UTC"))
+def holiday_context(df: pd.DataFrame) -> np.ndarray:
+    """Svatky, mosty a Vanoce (22. 12. - 3. 1.) vcetne +-HOLIDAY_CONTEXT dni.
+
+    Okoli je nutne: bez beznych dni kolem by ve starsich letech chybel opora
+    pro uroven a efekt svatku by splynul s urovni.
+    """
+    days = pd.to_datetime(df["date_local"])
+    hol = etl._cz_holidays(days.dt.year.min() - 1, days.dt.year.max() + 1)
+    special = pd.DatetimeIndex(sorted(hol | etl._bridges(hol)))
+    xmas = pd.DatetimeIndex([d for d in pd.date_range(days.min() - pd.Timedelta(days=10),
+                                                      days.max() + pd.Timedelta(days=10))
+                             if (d.month == 12 and d.day >= 22) or (d.month == 1 and d.day <= 3)])
+    anchor = special.union(xmas)
+    near = anchor.copy()
+    for k in range(1, HOLIDAY_CONTEXT + 1):
+        near = near.union(anchor + pd.Timedelta(days=k)).union(anchor - pd.Timedelta(days=k))
+    return days.isin(near).to_numpy()
+
+
+def train_mask(df: pd.DataFrame, issue_day: pd.Timestamp, window: int | None = None) -> np.ndarray:
+    """Data do cutoffu; s window [dny] jen poslednich window dni + okoli svatku
+    z cele historie (svatky se uci bez omezeni)."""
+    end = cutoff(issue_day).tz_convert("UTC")
+    mask = df.index < end
+    if window is not None:
+        recent = df.index >= end - pd.Timedelta(days=window)
+        mask &= recent | holiday_context(df)
+    return mask
 
 
 def refit(df: pd.DataFrame, mask: np.ndarray, warm: tuple | None,
@@ -95,15 +122,16 @@ def shape_days(issue_days: list[pd.Timestamp]) -> list[pd.Timestamp]:
     return [d for i, d in enumerate(issue_days) if i == 0 or d.dayofweek == SHAPE_REFIT_DOW]
 
 
-def shape_fit(df: pd.DataFrame, day: pd.Timestamp, warm: tuple | None) -> tuple:
+def shape_fit(df: pd.DataFrame, day: pd.Timestamp, warm: tuple | None,
+              window: int | None = None) -> tuple:
     """Plny (nelinearni) prefit z dat do cutoffu dne; warm=None = cely retezec."""
-    return refit(df, train_mask(df, day), warm)
+    return refit(df, train_mask(df, day, window), warm)
 
 
 def forecast_day(df: pd.DataFrame, day: pd.Timestamp, shape: tuple,
-                 shape_from: pd.Timestamp) -> tuple[pd.DataFrame, dict]:
+                 shape_from: pd.Timestamp, window: int | None = None) -> tuple[pd.DataFrame, dict]:
     """Linearni prefit s danym tvarem a predikce na D+1 (dny jsou nezavisle)."""
-    mask = train_mask(df, day)
+    mask = train_mask(df, day, window)
     params = refit(df, mask, shape, fix_shape=True)
     target = day + pd.Timedelta(days=1)
     sel = (pd.to_datetime(df["date_local"]) == target).to_numpy()

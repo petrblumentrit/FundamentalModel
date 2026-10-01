@@ -25,9 +25,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 OUT = ROOT / "simulace"
 # --out=slozka: jiny vystupni adresar (napr. pro srovnavaci beh vedle hlavniho)
+# --okno=dny: trenink jen z poslednich N dni (svatky a jejich okoli z cele historie)
+WINDOW = None
 for _a in sys.argv:
     if _a.startswith("--out="):
         OUT = ROOT / _a.split("=", 1)[1]
+    if _a.startswith("--okno="):
+        WINDOW = int(_a.split("=", 1)[1])
 # worker zabere ~0,4 GB RAM; ulohy faze 1 i 2 jsou nezavisle, takze rozhoduje
 # pocet jader
 N_WORKERS = 24
@@ -45,9 +49,9 @@ def _init():
 def _shape(args):
     """Faze 0/1: nelinearni tvar k cutoffu dne (warm=None = cely retezec)."""
     import backtest
-    day, warm = args
+    day, warm, window = args
     t = time.time()
-    params = backtest.shape_fit(_df, day, warm)
+    params = backtest.shape_fit(_df, day, warm, window)
     print(f"tvar k {day.date()} za {time.time() - t:.0f} s", flush=True)
     return day, params
 
@@ -58,11 +62,11 @@ def _days(args):
     import pandas as pd
 
     import backtest
-    days, shapes = args
+    days, shapes, window = args
     rows, pars = [], []
     for d in days:
         sd = max(k for k in shapes if k <= d)
-        comp, s = backtest.forecast_day(_df, d, shapes[sd], sd)
+        comp, s = backtest.forecast_day(_df, d, shapes[sd], sd, window)
         rows.append(comp)
         pars.append(s)
         e = comp["skutecnost"] - comp["predikce"]
@@ -84,23 +88,23 @@ def simulate():
     targets = pd.date_range(last_target - pd.Timedelta(days=364), last_target, freq="D")
     issue_days = list(targets - pd.Timedelta(days=1))
     print(f"data do {loc[-1]}; predikce D+1 pro {targets[0].date()} .. {targets[-1].date()} "
-          f"({len(targets)} dni)", flush=True)
+          f"({len(targets)} dni); okno {WINDOW or 'cela historie'}", flush=True)
 
     import backtest
     sdays = backtest.shape_days(issue_days)
     t = time.time()
     # faze 0 v hlavnim procesu — je seriova, tady ma BLAS vsechna jadra
-    p0 = backtest.shape_fit(df, sdays[0], None)
+    p0 = backtest.shape_fit(df, sdays[0], None, WINDOW)
     print(f"faze 0 hotova za {time.time() - t:.0f} s", flush=True)
     for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
         os.environ[v] = str(THREADS)   # dedi az workery spustene nize
     with ProcessPoolExecutor(N_WORKERS, initializer=_init) as ex:
         shapes = {sdays[0]: p0}
         # nejdrive pozdejsi pondeli: jsou dal od warm startu, fit trva dele
-        shapes.update(dict(ex.map(_shape, [(d, p0) for d in reversed(sdays[1:])])))
+        shapes.update(dict(ex.map(_shape, [(d, p0, WINDOW) for d in reversed(sdays[1:])])))
         print(f"faze 1 ({len(sdays)} tvaru) hotova za {time.time() - t:.0f} s", flush=True)
         chunks = [list(c) for c in np.array_split(np.array(issue_days, dtype=object), 3 * N_WORKERS)]
-        res = list(ex.map(_days, [(c, shapes) for c in chunks]))
+        res = list(ex.map(_days, [(c, shapes, WINDOW) for c in chunks]))
     print(f"simulace hotova za {(time.time() - t) / 60:.1f} min", flush=True)
 
     pred = pd.concat([r[0] for r in res]).sort_index()

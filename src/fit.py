@@ -141,7 +141,9 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     n_h = heating.k_basis(df.head(1)).shape[1]
     n_c = cooling.k_basis(df.head(1)).shape[1]
     n_p = pv.capacity_basis(df.head(1), t0_p, span_p).shape[1]
-    n_t = heating.trend_basis(df.head(1), t0_p, span_p).shape[1]
+    n_r = heating.trend_basis(df.head(1), t0_p, span_p).shape[1]
+    n_j = 1 + 2 * heating.TREND_K_TOD
+    n_t = n_j * n_r
     p = p_F + n_h + n_c + n_p + n_t
     sl_pv = slice(p_F + n_h + n_c, p_F + n_h + n_c + n_p)
     sl_tr = slice(sl_pv.stop, p)
@@ -157,7 +159,9 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     pen[sl_b["level"], sl_b["level"]] = smooth * (D2.T @ D2)
     D1 = np.diff(np.eye(n_p - 1), axis=0)
     pv_lo = p_F + n_h + n_c + 1
-    D1t = np.diff(np.eye(n_t), axis=0)
+    # zmeny tempa penalizovane zvlast v kazde slozce denniho tvaru prirustku
+    D1r = np.diff(np.eye(n_r), axis=0)
+    D1t = np.kron(np.eye(n_j), D1r)
 
     lb = np.full(p, -np.inf)
     lb[sl_pv] = 0.0              # kapacita FVE neklesajici
@@ -167,7 +171,7 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     n_hp = len(heating.PARAM_NAMES)
     n_cp = len(cooling.PARAM_NAMES)
 
-    T_h = heating.trend_basis(df, t0_p, span_p)
+    T_h = heating.trend_design(df, t0_p, span_p)
 
     def blocks(q):
         th_h, th_c, gamma = q[:n_hp], q[n_hp:n_hp + n_cp], q[-1]

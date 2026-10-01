@@ -333,3 +333,29 @@ Korekce z v3 získá méně, protože část soumrakového vzorce dřív chytala
 | **v5 role dnů** | **19,47** | **15,36** | **18,00** | **13,21** |
 
 **Další kroky:** noční drift tvaru přes roky (není z topení — je i v létě); korekce konkrétních svátků (metoda 2); vánoční blok (uživatel dodá starší data); validace mimo vzorek (krok 7) pro aktuální verzi.
+
+### 2026-10-01 — délka trénovacího okna, data OTE (PRE), trend topení s denním tvarem (kroky 13–15)
+
+**13 — délka trénovacího okna** (`src/backtest.py`, `--okno=dny`): trénink jen z posledních N dní, svátky, mosty a Vánoce (22. 12. – 3. 1.) i s ±3 dny okolí z celé historie (bez okolí by ve starších letech chyběla opora pro úroveň). Backtest (RMSE / MAPE modelu; s korekcí mimo Vánoce): celá historie 19,47 / 1,99 % (13,21), 3 roky 19,37 / 1,98 % (13,39), 2 roky 19,67 / 2,01 % (13,72), 1 rok 20,20 / 2,12 % (14,40). **Okno nezkracovat** — zima potřebuje dlouhou paměť (leden 20,2 vs 24,0 při 1 roce), ani léto kratší okno nezlepší. Noční bias zůstal i při okně 1 rok → nevzniká průměrováním starých let.
+
+**Rozklad chyby backtestu**: chyba modelu fitovaného ze všech dat je na stejných dnech prakticky stejná jako chyba predikce → chyba je **strukturální**, ne predikční (výjimka podzim: +4 až +6 zpoždění nástupu topné sezóny). Fit ze všech dat a fit k cutoffu se liší v rozdělení báze vs topení až o ~20 i v létě (topná složka má letní chvost ~14) — na predikci vliv nemá, zkresluje očištěnou spotřebu; řešit zvlášť.
+
+**14 — data OTE pro PRE** (`src/ote.py`, `explore/zd_analyza.py`, grafy 29–30; data v `Analyza/` mimo repo): zbytkový diagram (ZD, domácnosti + veřejné osvětlení), jeho koeficienty KZD (poměr ZD k očekávání podle TDD přepočtených na skutečnou teplotu) a přepočtené TDD, 1. 1. 2022 – 31. 5. 2026 (do 6/2024 hodinově, pak 15min; vše převedeno na hodiny v UTC).
+- Tvar dne portfolia koreluje s domácnostmi PRE 0,76–0,85; topná citlivost domácností je ~2× vyšší.
+- **Dlouhodobý drift tvaru je malý**: portfolio očištěné o počasí mění podíl noci a večera o ≤ 1,5 p. b. (hlavně 2022 → 2024, od 2024 stabilní); domácnosti posouvají noc → večer hlavně na jaře.
+- **Topná citlivost** (sklon, index první zima = 100) 2021/22 → 2025/26: domácnosti PRE 100 → 128, trend v modelu 100 → 125 (sedí); hrubý sklon portfolia 179 je zkreslený mrazivým lednem 2026 (nelinearita, COP).
+- **KZD roste**: domácnosti spotřebovávají čím dál víc nad TDD (2022 ~0,96 → 2024–25 ~1,03 → I–III/2026 1,05–1,11), nejvíc v zimě — souhlasí s růstem tepelných čerpadel.
+- **Energetická krize 2022**: KZD na podzim 2022 0,92 — domácnosti šetřily; vysvětluje mělké minimum úrovně 2023. Část odhadovaného růstu topné citlivosti od 2022 může být návrat po krizovém šetření (pro predikci nevadí, pro výklad a saturaci ano). Uživatel zmiňuje i přechod na přímotopy kvůli cenám plynu — data ho výrazně neukazují (KZD v zimě 2022/23 nevzrostl), mohl být menší nebo krátký.
+- TDD7 (domácnosti přímotop/TČ): citlivost na teplotu v noci ~0,7 denní — stejný poměr jako topný k(čas dne) v modelu. Noční útlum TČ (nižší bilanční teplota v noci) z TDD neověřitelný (OTE přepočítává lineárně); v reziduích je jen mírný podstřelený ranní náběh (+3 až +7 v 6–9 h v topných dnech).
+- KZD pro predikci nepoužitelné (publikováno zpětně), vhodné pro sledování vývoje.
+
+**15 — trend topení s vlastním denním tvarem** (`src/heating.py`, `src/fit.py`): Δk(t, čas dne) = Σ_j φ_j(čas dne) · Δk_j(t), φ = [1, 2 harmonické], každá složka vlastní rampy se stejnou penalizací změn tempa (80 koeficientů, lineární krok joint fitu). **Přírůstek topné zátěže je soustředěný odpoledne a večer**: na konci dat noc +17 až +19 %, den +25 %, 15–21 h +30 až +35 % průměrného k. In-sample 16,71 → 16,58.
+
+| backtest | RMSE | MAPE | mimo Vánoce | + korekce | + korekce MAPE | + korekce mimo Vánoce |
+|---|---|---|---|---|---|---|
+| v5 role dnů | 19,47 | 1,99 % | 15,36 | 18,00 | 1,74 % | 13,21 |
+| **v6 trend s tvarem** | **19,31** | **1,92 %** | **14,61** | **17,88** | **1,70 %** | **12,89** |
+
+Zimní bias má vyrovnaný tvar (dřív noc −0,3 / odpoledne +15,5, nyní +3 až +9 přes celý den) — zbývá úroveň: **Vánoce (20. 12. – 6. 1.) jsou in-sample o −23,6 pod modelem a stahují zbytek zimy (+2,8)**, protože model vyrovnává zimu jako celek. Podzimní odpoledne +11 (část zpoždění nástupu sezóny), jarní noc −4,3.
+
+**Další kroky:** vánoční blok (pracovní dny 22. 12. – 3. 1., svátky 25.–26. 12., Štědrý večer: příprava jídla → špička, večeře → pokles, televize → nárůst) — pomůže i zbytku zimy; letní chvost topení vs úroveň; validace mimo vzorek pro aktuální verzi.

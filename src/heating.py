@@ -19,6 +19,10 @@ Fituje se na reziduich po odectu baze (y - B) v chladnem a mirnem obdobi:
   po TREND_KNOT_DAYS dnech jako kapacita FVE, bez omezeni znamenka (cisty
   efekt muze jit obema smery), penalizace zmen tempa (instalace mohou
   saturovat); za koncem dat drzi posledni hodnotu, trend se neextrapoluje.
+  Prirustek ma **vlastni denni tvar**: dk(t, cas dne) = sum_j phi_j(cas dne)
+  * dk_j(t), phi = [1, TREND_K_TOD harmonickych] — nova topna zatez (tepelna
+  cerpadla s nocnim utlumem a ekvitermou) nemusi mit denni prubeh jako ta
+  puvodni. Kazda slozka ma vlastni rampy se stejnou penalizaci.
   Odhaduje se jen v joint fitu (staged fit ho nema).
 """
 from pathlib import Path
@@ -30,6 +34,7 @@ from scipy.optimize import least_squares
 import pv
 
 K_TOD = 4        # harmonickych v k(cas dne)
+TREND_K_TOD = 2  # harmonickych v dennim tvaru prirustku citlivosti
 T_IN = 20.0      # vnitrni teplota pro vetrny clen [C]
 COP_FLOOR = 0.2
 N_DAYTYPES = 4
@@ -110,11 +115,24 @@ def trend_basis(df: pd.DataFrame, t0, span_days: float) -> np.ndarray:
     return pv.capacity_basis(df, pd.Timestamp(t0), span_days)[:, 1:]
 
 
+def trend_tod(tod: np.ndarray) -> np.ndarray:
+    """phi_j(cas dne): [1, cos, sin ...] — denni tvar prirustku."""
+    w = 2 * np.pi * np.outer(tod, np.arange(1, TREND_K_TOD + 1)) / 24.0
+    return np.hstack([np.ones((len(tod), 1)), np.cos(w), np.sin(w)])
+
+
+def trend_design(df: pd.DataFrame, t0, span_days: float) -> np.ndarray:
+    """Sloupce phi_j(cas dne) * rampa_r(t), poradi j-major (blok na slozku)."""
+    R = trend_basis(df, t0, span_days)
+    Phi = trend_tod(df["tod"].to_numpy())
+    return (Phi[:, :, None] * R[:, None, :]).reshape(len(df), -1)
+
+
 def k_total(df: pd.DataFrame, params: dict) -> np.ndarray:
-    """k(cas dne, typ dne) + dk(t)."""
+    """k(cas dne, typ dne) + dk(t, cas dne)."""
     k_t = k_basis(df) @ params["k_coef"]
     if "trend_coef" in params:
-        k_t = k_t + trend_basis(df, params["trend_t0"], params["trend_span"]) @ params["trend_coef"]
+        k_t = k_t + trend_design(df, params["trend_t0"], params["trend_span"]) @ params["trend_coef"]
     return k_t
 
 
@@ -123,12 +141,27 @@ def predict(df: pd.DataFrame, params: dict) -> np.ndarray:
     return k_total(df, params) * shape_term(df, theta)
 
 
+def _trend_blocks(params: dict) -> np.ndarray:
+    """Koeficienty trendu jako matice (slozka denniho tvaru x rampa)."""
+    c = np.asarray(params["trend_coef"])
+    return c.reshape(1 + 2 * TREND_K_TOD, -1)
+
+
 def trend_curve(dates: pd.DatetimeIndex, params: dict) -> np.ndarray:
-    """dk(t) — prirustek topne citlivosti od zacatku dat (jednotky k)."""
+    """Prumer dk(t, cas dne) pres den — prirustek topne citlivosti (jednotky k)."""
     if "trend_coef" not in params:
         return np.zeros(len(dates))
     fake = pd.DataFrame(index=dates)
-    return trend_basis(fake, params["trend_t0"], params["trend_span"]) @ params["trend_coef"]
+    return trend_basis(fake, params["trend_t0"], params["trend_span"]) @ _trend_blocks(params)[0]
+
+
+def trend_profile(date, params: dict, tod: np.ndarray | None = None) -> np.ndarray:
+    """dk(t, cas dne) v danem dni podle casu dne."""
+    if tod is None:
+        tod = np.arange(0, 24, 0.25)
+    fake = pd.DataFrame(index=pd.DatetimeIndex([pd.Timestamp(date)]))
+    r = trend_basis(fake, params["trend_t0"], params["trend_span"])[0]
+    return trend_tod(tod) @ (_trend_blocks(params) @ r)
 
 
 def k_curve(daytype: int, params: dict, tod: np.ndarray | None = None) -> np.ndarray:

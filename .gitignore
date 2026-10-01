@@ -7,3 +7,5 @@ Data/
 models/validace.pkl
 # vysledky simulace predikce (obsahuji data portfolia)
 simulace/
+# zbytkove diagramy distribuce (data, mimo repo)
+Analyza/
