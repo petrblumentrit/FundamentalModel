@@ -124,4 +124,19 @@ ax.set_ylabel("denní průměrná spotřeba (7denní průměr)")
 ax.set_title("Očištěná spotřeba — dvě definice", loc="left")
 ax.legend(frameon=False, ncol=3)
 fig.savefig(OUT / "21_ocistena_spotreba.png", dpi=130, bbox_inches="tight")
-print("\ngrafy 19-21 ulozeny")
+
+# --- 28. casova zmena topne citlivosti ---
+k_mean = float(np.mean(heating.k_basis(df) @ hp["k_coef"]))
+rel = 100 * heating.trend_curve(days, hp) / k_mean
+fig, ax = plt.subplots(figsize=(10, 4.2))
+ax.plot(days, rel, color=ORANGE, lw=2)
+ax.axhline(0, color=BASELINE, lw=1)
+ax.set_ylabel("změna topné citlivosti [% průměrného k]")
+ax.set_title("Topná citlivost v čase (tepelná čerpadla − zateplování; za koncem dat drží)", loc="left")
+fig.savefig(OUT / "28_topeni_trend.png", dpi=130, bbox_inches="tight")
+loc_days = days.tz_convert(etl.TZ)
+zimy = {f"{y}/{y + 1 - 2000:02d}": float(rel[((loc_days.year == y) & (loc_days.month >= 11))
+                                            | ((loc_days.year == y + 1) & (loc_days.month <= 2))].mean())
+        for y in range(2021, 2026)}
+print("topna citlivost po zimach (XI-II) [% prumerneho k]:", {k: round(v, 1) for k, v in zimy.items()})
+print("\ngrafy 19-21, 28 ulozeny")

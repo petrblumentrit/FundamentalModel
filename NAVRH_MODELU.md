@@ -306,3 +306,30 @@ Výstupy (mimo repo, `simulace/`): `predikce_D1.csv` (čas vydání, konec dat, 
 Korekce z v3 získá méně, protože část soumrakového vzorce dřív chytala sama (tvar chyby za posledních 7 dní). Noční bias modelu (−5 v 0–6 h) zůstává — to je drift tvaru přes roky (návrh B), ne osvětlení.
 
 **Další kroky:** drift tvaru přes roky — nejdřív časová změna topné složky (tepelná čerpadla místo plynu po roce 2022), pak obecný drift tvaru; vánoční blok (uživatel dodá starší data); validace mimo vzorek (krok 7) pro aktuální verzi modelu.
+
+### 2026-10-01 — trend topné citlivosti, role dnů v bloku volna, zrychlení backtestu (kroky 10–12)
+
+**10 — časová změna topné citlivosti** (`src/heating.py`, `src/fit.py`): `P_top = [k(čas dne, typ dne) + Δk(t)] · g(T*)/COP(T)`. Δk(t) je aditivní přírůstek od začátku dat („přibylá topná zátěž“ — tepelná čerpadla místo plynu po roce 2022; proti tomu zateplování, které model zachytí implicitně v čistém efektu). Rampy po 90 dnech jako kapacita FVE, **bez omezení znaménka**, penalizace změn tempa (instalace mohou saturovat); za koncem dat drží, trend se neextrapoluje. Odhaduje se jen v joint fitu (lineární krok).
+- Výsledek: **topná citlivost vzrostla od zimy 2021/22 do 2025/26 o ~25 %** (zimy +5,8 / +12,9 / +18,4 / +24,6 %), robustní na penalizaci (0,5 / 5 / 50 → 26,8 / 24,7 / 23,6 %), téměř lineárně ~6 %/rok, saturace zatím nevidět (graf 28). Úroveň báze za stejnou dobu vzrostla jen o ~6 %, takže nejde jen o růst portfolia.
+- Noční drift tvaru (noc rok od roku relativně níž) zůstal a je **stejný i v létě** — nesouvisí s topením, samostatný jev k řešení.
+- In-sample 17,27 → 17,10; backtest model mimo Vánoce 16,99 → 15,78 (leden 25,2 → 23,2, únor 16,5 → 14,2, listopad 21,2 → 18,5).
+
+**11 — typ dne = role v bloku volna** (`src/etl.py`): role podle toho, zda je volno dnes a zítra — 0 práce→práce (Po–Čt), 1 práce→volno (pátek; i čtvrtek před pátečním svátkem, mosty), 2 volno→volno (sobota; i svátek před víkendem, Velký pátek až Velikonoční neděle), 3 volno→práce (neděle; i Velikonoční pondělí, svátek uprostřed týdne). Volno včera nese ranní člen po volnu. Svátky tak přebírají profily naučené z ~240 víkendů, bez nových parametrů; běžné týdny beze změny.
+- Motivace (uživatel): čtvrtek 30. 4. 2026 před svátkem měl odpoledne jiný tvar. Diagnostika: všech 23 pracovních dní před svátkem (mimo Vánoce) mělo odpoledne a večer −15 až −25; po změně ~0 (zbývá −11 ve 12–15 h), 30. 4. večer −49 → −18.
+- Svátky v pracovní den jsou dopoledne stále o +12 až +16 výš než profil soboty (1. 5. 2026 +39) → příště aditivní korekce konkrétních svátků se smršťováním (hierarchicky: svátek obecně + konkrétní svátek + den v týdnu) a příznak zákazu prodeje (zavřené obchody jen o některých svátcích).
+- Vánoce (22. 12. – 3. 1.) se budou modelovat samostatně: pracovní dny mezi svátky, čisté svátky 25.–26. 12. a specifický večer 24. 12. (příprava večeře → špička, večeře → pokles, televize → nárůst).
+- In-sample 17,10 → 16,71. Backtest (13 dní kolem svátků mimo Vánoce): model 23,3 → 18,6, s korekcí 22,3 → 17,2; ostatní dny 15,43 → 15,26.
+
+**12 — zrychlení backtestu** (`src/backtest.py`, `explore/backtest.py`): nelineární parametry tvaru se přefitují **jednou týdně** (pondělí) a první den simulace, lineární část denně (`fit.joint(..., fix_shape=True)`, ~2 s místo ~60 s). Ověřeno na modelu v4: RMSE 19,95 vs 19,87 při denním nelineárním přefitu, predikce se liší v průměru o 0,7. Výpočet je třífázový a paralelní: (0) celý řetězec k prvnímu dni simulace v hlavním procesu, (1) tvar pro každé pondělí — warm start z fáze 0 (data před simulací, žádný únik z budoucnosti), pondělí nezávislá, nejdřív nejvzdálenější, 24 workerů, (2) lineární přefit a predikce pro každý den s tvarem posledního pondělí. Výsledek nezávisí na počtu workerů. **84 min → 10,3 min** (fáze 0: 2 min, fáze 1: 6,3 min, fáze 2: ~2 min); úzké hrdlo je fáze 1 (fity tvaru 23–258 s, sdílená propustnost paměti).
+
+**Souhrn backtestu** (RMSE 15min, poslední rok, Vánoce = 21. 12. – 3. 1.):
+
+| verze | model | mimo Vánoce | + korekce | + korekce mimo Vánoce |
+|---|---|---|---|---|
+| v1 (výchozí) | 21,10 | 17,86 | 18,51 | 14,37 |
+| v2 ráno po volnu, mosty | 20,84 | 17,73 | 18,29 | 14,32 |
+| v3 osvětlení | 20,26 | 16,99 | 18,11 | 14,09 |
+| v4 trend topení | 19,87 | 15,78 | 18,39 | 13,84 |
+| **v5 role dnů** | **19,47** | **15,36** | **18,00** | **13,21** |
+
+**Další kroky:** noční drift tvaru přes roky (není z topení — je i v létě); korekce konkrétních svátků (metoda 2); vánoční blok (uživatel dodá starší data); validace mimo vzorek (krok 7) pro aktuální verzi.

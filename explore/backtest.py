@@ -1,8 +1,10 @@
 """Simulace provozni predikce D+1 za posledni rok platnych dat (viz src/backtest.py).
 
 V den D v 10:00 se z dat do D 09:00 prefituje model a predikuje cely den D+1.
-Dny vydani se deli do souvislych bloku, ktere bezi paralelne (v bloku warm
-start ze dne na den). Vysledky:
+Paralelne ve trech fazich: (0) cely retezec fitu k prvnimu dni simulace,
+(1) nelinearni tvar pro kazde pondeli (warm start z faze 0, pondeli nezavisla),
+(2) linearni prefit a predikce pro kazdy den s tvarem posledniho pondeli.
+Vysledky:
 
     simulace/predikce_D1.csv   15min predikce D+1 se slozkami a skutecnosti,
                                korekce z chyb drivejsich predikci (src/correction.py)
@@ -22,8 +24,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 OUT = ROOT / "simulace"
-N_WORKERS = 10
-THREADS = 3
+# --out=slozka: jiny vystupni adresar (napr. pro srovnavaci beh vedle hlavniho)
+for _a in sys.argv:
+    if _a.startswith("--out="):
+        OUT = ROOT / _a.split("=", 1)[1]
+# worker zabere ~0,4 GB RAM; ulohy faze 1 i 2 jsou nezavisle, takze rozhoduje
+# pocet jader
+N_WORKERS = 24
+THREADS = 1
 
 _df = None
 
@@ -34,13 +42,33 @@ def _init():
     _df = etl.load()
 
 
-def _work(days):
+def _shape(args):
+    """Faze 0/1: nelinearni tvar k cutoffu dne (warm=None = cely retezec)."""
     import backtest
+    day, warm = args
     t = time.time()
-    pred, pars = backtest.run_days(_df, days, log=lambda s: print(s, flush=True))
-    print(f"blok {days[0].date()}..{days[-1].date()} hotov za {time.time() - t:.0f} s",
-          flush=True)
-    return pred, pars
+    params = backtest.shape_fit(_df, day, warm)
+    print(f"tvar k {day.date()} za {time.time() - t:.0f} s", flush=True)
+    return day, params
+
+
+def _days(args):
+    """Faze 2: linearni prefit a predikce D+1 pro skupinu dni."""
+    import numpy as np
+    import pandas as pd
+
+    import backtest
+    days, shapes = args
+    rows, pars = [], []
+    for d in days:
+        sd = max(k for k in shapes if k <= d)
+        comp, s = backtest.forecast_day(_df, d, shapes[sd], sd)
+        rows.append(comp)
+        pars.append(s)
+        e = comp["skutecnost"] - comp["predikce"]
+        print(f"{d.date()} -> {(d + pd.Timedelta(days=1)).date()}  "
+              f"RMSE {np.sqrt((e**2).mean()):6.1f}  bias {e.mean():+6.1f}", flush=True)
+    return pd.concat(rows), pd.DataFrame(pars).set_index("vydano")
 
 
 def simulate():
@@ -58,12 +86,21 @@ def simulate():
     print(f"data do {loc[-1]}; predikce D+1 pro {targets[0].date()} .. {targets[-1].date()} "
           f"({len(targets)} dni)", flush=True)
 
-    chunks = [list(c) for c in np.array_split(np.array(issue_days, dtype=object), N_WORKERS)]
-    for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
-        os.environ[v] = str(THREADS)
+    import backtest
+    sdays = backtest.shape_days(issue_days)
     t = time.time()
+    # faze 0 v hlavnim procesu — je seriova, tady ma BLAS vsechna jadra
+    p0 = backtest.shape_fit(df, sdays[0], None)
+    print(f"faze 0 hotova za {time.time() - t:.0f} s", flush=True)
+    for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+        os.environ[v] = str(THREADS)   # dedi az workery spustene nize
     with ProcessPoolExecutor(N_WORKERS, initializer=_init) as ex:
-        res = list(ex.map(_work, chunks))
+        shapes = {sdays[0]: p0}
+        # nejdrive pozdejsi pondeli: jsou dal od warm startu, fit trva dele
+        shapes.update(dict(ex.map(_shape, [(d, p0) for d in reversed(sdays[1:])])))
+        print(f"faze 1 ({len(sdays)} tvaru) hotova za {time.time() - t:.0f} s", flush=True)
+        chunks = [list(c) for c in np.array_split(np.array(issue_days, dtype=object), 3 * N_WORKERS)]
+        res = list(ex.map(_days, [(c, shapes) for c in chunks]))
     print(f"simulace hotova za {(time.time() - t) / 60:.1f} min", flush=True)
 
     pred = pd.concat([r[0] for r in res]).sort_index()

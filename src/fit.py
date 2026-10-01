@@ -49,6 +49,8 @@ def bounded_lstsq(A: np.ndarray, y: np.ndarray, lb: np.ndarray, ub: np.ndarray,
 # slunce) dostava skok +30 jednotek — 5.0 ho potlaci, in-sample RMSE nemeni
 # (18.66 -> 18.68), dopredna chyba roku 2026 klesa 20.0 -> 19.0; vic uz nepomaha
 PV_SMOOTH = 5.0
+# penalizace zmen tempa prirustku topne citlivosti (relativne k A'A bloku)
+HEAT_TREND_SMOOTH = 5.0
 
 
 def _pv_penalty(n_c: int, n_p: int, gram_pv: float, lam: float) -> np.ndarray:
@@ -105,7 +107,8 @@ def fit_cooling_pv(df: pd.DataFrame, resid: np.ndarray,
 
 
 def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
-          max_nfev: int = 400, mask: np.ndarray | None = None) -> tuple[dict, dict, dict, dict]:
+          max_nfev: int = 400, mask: np.ndarray | None = None,
+          fix_shape: bool = False) -> tuple[dict, dict, dict, dict]:
     """Zaverecny spolecny fit vsech modulu (krok 6) s warm startem z kroku 1-5.
 
     Sekvencni odhad nechava po sdilenych regresorech (hlavne osvitu) systematicke
@@ -120,6 +123,10 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     mask = radky pouzite pro odhad (validace mimo vzorek). Regresory vcetne
     setrvacnostnich filtru se stavi na cele ose, do normalnich rovnic vstupuji
     jen radky masky.
+
+    fix_shape = nelinearni parametry tvaru drzet z warm startu a resit jen
+    linearni cast (jedno vyhodnoceni misto ~50) — pro denni prefit v provozu,
+    kde se tvar meni pomalu a staci ho preodhadnout jednou za cas.
     """
     if mask is None:
         mask = np.ones(len(df), bool)
@@ -134,7 +141,10 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     n_h = heating.k_basis(df.head(1)).shape[1]
     n_c = cooling.k_basis(df.head(1)).shape[1]
     n_p = pv.capacity_basis(df.head(1), t0_p, span_p).shape[1]
-    p = p_F + n_h + n_c + n_p
+    n_t = heating.trend_basis(df.head(1), t0_p, span_p).shape[1]
+    p = p_F + n_h + n_c + n_p + n_t
+    sl_pv = slice(p_F + n_h + n_c, p_F + n_h + n_c + n_p)
+    sl_tr = slice(sl_pv.stop, p)
 
     sl_b = base._slices(bp["span_days"])
     ns = sl_b["level"].stop - sl_b["level"].start
@@ -147,24 +157,29 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     pen[sl_b["level"], sl_b["level"]] = smooth * (D2.T @ D2)
     D1 = np.diff(np.eye(n_p - 1), axis=0)
     pv_lo = p_F + n_h + n_c + 1
+    D1t = np.diff(np.eye(n_t), axis=0)
 
     lb = np.full(p, -np.inf)
-    lb[p_F + n_h + n_c:] = 0.0   # kapacita FVE neklesajici
+    lb[sl_pv] = 0.0              # kapacita FVE neklesajici
     lb[sl_b["svetlo"]] = 0.0     # osvetleni za tmy jen pridava spotrebu
     ub = np.full(p, np.inf)
 
     n_hp = len(heating.PARAM_NAMES)
     n_cp = len(cooling.PARAM_NAMES)
 
+    T_h = heating.trend_basis(df, t0_p, span_p)
+
     def blocks(q):
         th_h, th_c, gamma = q[:n_hp], q[n_hp:n_hp + n_cp], q[-1]
         A_pv = pv.design(df, gamma, t0_p, span_p)[mask]
-        V = np.hstack([(heating.k_basis(df) * heating.shape_term(df, th_h)[:, None])[mask],
-                       cooling.design(df, th_c)[mask], A_pv])
-        return V, float(np.mean((A_pv * A_pv).sum(0)))
+        H = heating.shape_term(df, th_h)[:, None]
+        A_tr = (T_h * H)[mask]
+        V = np.hstack([(heating.k_basis(df) * H)[mask],
+                       cooling.design(df, th_c)[mask], A_pv, A_tr])
+        return V, float(np.mean((A_pv * A_pv).sum(0))), float(np.mean((A_tr * A_tr).sum(0)))
 
     def inner(q):
-        V, gram_pv = blocks(q)
+        V, gram_pv, gram_tr = blocks(q)
         G = np.empty((p, p))
         G[:p_F, :p_F] = FtF
         FtV = F.T @ V
@@ -173,7 +188,8 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
         G[p_F:, p_F:] = V.T @ V
         c = np.concatenate([Fty, V.T @ y])
         P = pen.copy()
-        P[pv_lo:, pv_lo:] = PV_SMOOTH * gram_pv * (D1.T @ D1)
+        P[pv_lo:sl_pv.stop, pv_lo:sl_pv.stop] = PV_SMOOTH * gram_pv * (D1.T @ D1)
+        P[sl_tr, sl_tr] = HEAT_TREND_SMOOTH * gram_tr * (D1t.T @ D1t)
         coef = bounded_normal(G, c, lb, ub, penalty=P)
         return coef, y - F @ coef[:p_F] - V @ coef[p_F:]
 
@@ -182,18 +198,22 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     lower = np.concatenate([heating.LOWER, cooling.LOWER, [0.0]])
     upper = np.concatenate([heating.UPPER, cooling.UPPER, [0.01]])
     x0 = np.clip(x0, lower + 1e-9, upper - 1e-9)
-    sol = least_squares(lambda q: inner(q)[1], x0, bounds=(lower, upper),
-                        diff_step=1e-3, x_scale=upper - lower, max_nfev=max_nfev)
-    coef, res = inner(sol.x)
+    if fix_shape:
+        q = x0
+    else:
+        q = least_squares(lambda q: inner(q)[1], x0, bounds=(lower, upper),
+                          diff_step=1e-3, x_scale=upper - lower, max_nfev=max_nfev).x
+    coef, res = inner(q)
 
     stats = {"rmse": float(np.sqrt(np.mean(res**2))),
              "r2": float(1 - res.var() / y.var())}
     bo = dict(bp); bo["coef"] = coef[:p_F]; bo.update(stats)
-    ho = dict(zip(heating.PARAM_NAMES, sol.x[:n_hp]))
-    ho.update({"k_coef": coef[p_F:p_F + n_h], "k_tod": heating.K_TOD, **stats})
-    co = dict(zip(cooling.PARAM_NAMES, sol.x[n_hp:n_hp + n_cp]))
+    ho = dict(zip(heating.PARAM_NAMES, q[:n_hp]))
+    ho.update({"k_coef": coef[p_F:p_F + n_h], "k_tod": heating.K_TOD,
+               "trend_coef": coef[sl_tr], "trend_t0": str(t0_p), "trend_span": span_p, **stats})
+    co = dict(zip(cooling.PARAM_NAMES, q[n_hp:n_hp + n_cp]))
     co.update({"k_coef": coef[p_F + n_h:p_F + n_h + n_c], "k_tod": cooling.K_TOD, **stats})
-    po = {"gamma": float(sol.x[-1]), "delta": coef[p_F + n_h + n_c:],
+    po = {"gamma": float(q[-1]), "delta": coef[sl_pv],
           "t0": str(t0_p), "span_days": span_p, "knot_days": pv.KNOT_DAYS, **stats}
     return bo, ho, co, po
 

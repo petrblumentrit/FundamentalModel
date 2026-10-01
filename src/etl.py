@@ -1,6 +1,7 @@
 """Nacteni vstupnich dat: 15min spotreba portfolia a meteo (CET/CEST -> UTC)."""
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "Data"
@@ -35,17 +36,23 @@ def load(with_local_time: bool = True) -> pd.DataFrame:
         df["date_local"] = loc.date
         df["tod"] = loc.hour + loc.minute / 60  # cas dne [h]
         df["dow"] = loc.dayofweek  # 0=Po
-        # typ dne: 0 Po-Ct, 1 patek/most, 2 sobota, 3 nedele/svatek
-        holidays = _cz_holidays(loc.year.min(), loc.year.max())
+        # typ dne = role v bloku volna podle toho, zda je volno dnes a zitra:
+        #   0 prace->prace (Po-Ct), 1 prace->volno (patek; i ctvrtek pred
+        #   patecnim svatkem, mosty), 2 volno->volno (sobota; i svatek pred
+        #   vikendem), 3 volno->prace (nedele; i Velikonocni pondeli).
+        # Svatky tak prebiraji profily naucene z ~240 vikendu misto nedele pro
+        # vsechny; pro bezne tydny se nic nemeni. Volno vcera nese ranni clen
+        # po volnu (po_volnu).
+        holidays = _cz_holidays(loc.year.min(), loc.year.max() + 1)
         dates = pd.Series(loc.date, index=df.index)
-        is_holiday = dates.isin(holidays)
-        df["daytype"] = 0
-        df.loc[df["dow"] == 4, "daytype"] = 1
-        df.loc[df["dow"] == 5, "daytype"] = 2
-        df.loc[(df["dow"] == 6) | is_holiday, "daytype"] = 3
-        # mosty: pracovni den sevreny mezi svatkem a vikendem/svatkem
+        days = pd.to_datetime(dates)
+        off = ((df["dow"] >= 5) | dates.isin(holidays)).to_numpy()
+        nxt = days + pd.Timedelta(days=1)
+        off_next = ((nxt.dt.dayofweek >= 5) | nxt.dt.date.isin(holidays)).to_numpy()
+        df["daytype"] = np.select([~off & ~off_next, ~off & off_next, off & off_next],
+                                  [0, 1, 2], default=3)
+        # mosty: pracovni den sevreny mezi svatkem a vikendem/svatkem (role 1)
         df["most"] = dates.isin(_bridges(holidays)).to_numpy()
-        df.loc[df["most"], "daytype"] = 1
         # letni prazdniny (dominantni skolni volno)
         df["prazdniny"] = loc.month.isin([7, 8])
         # predchozi kalendarni den volny (vikend/svatek) — rezim noci se meni az

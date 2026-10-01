@@ -13,12 +13,21 @@ Fituje se na reziduich po odectu baze (y - B) v chladnem a mirnem obdobi:
 - k(cas dne, typ dne) = Fourier (K_TOD harmonickych) + offsety typu dne;
   pro dane nelinearni parametry je model linearni v k -> separabilni LS
   (vnejsi nelinearni optimalizace jen pres 7 parametru)
+- casova zmena citlivosti: k(cas dne, typ dne) + dk(t), kde dk(t) je
+  pomaly prirustek od zacatku dat — aditivni clen "pribyle topne zateze"
+  (tepelna cerpadla misto plynu po roce 2022, proti tomu zateplovani). Rampy
+  po TREND_KNOT_DAYS dnech jako kapacita FVE, bez omezeni znamenka (cisty
+  efekt muze jit obema smery), penalizace zmen tempa (instalace mohou
+  saturovat); za koncem dat drzi posledni hodnotu, trend se neextrapoluje.
+  Odhaduje se jen v joint fitu (staged fit ho nema).
 """
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from scipy.optimize import least_squares
+
+import pv
 
 K_TOD = 4        # harmonickych v k(cas dne)
 T_IN = 20.0      # vnitrni teplota pro vetrny clen [C]
@@ -95,10 +104,31 @@ def fit(df: pd.DataFrame, resid: np.ndarray, mask: np.ndarray) -> dict:
     return out
 
 
+def trend_basis(df: pd.DataFrame, t0, span_days: float) -> np.ndarray:
+    """Rampy prirustku citlivosti (bez interceptu — ten nese k); za koncem
+    rozsahu drzi, jen plne pozorovane rampy (stejne jako kapacita FVE)."""
+    return pv.capacity_basis(df, pd.Timestamp(t0), span_days)[:, 1:]
+
+
+def k_total(df: pd.DataFrame, params: dict) -> np.ndarray:
+    """k(cas dne, typ dne) + dk(t)."""
+    k_t = k_basis(df) @ params["k_coef"]
+    if "trend_coef" in params:
+        k_t = k_t + trend_basis(df, params["trend_t0"], params["trend_span"]) @ params["trend_coef"]
+    return k_t
+
+
 def predict(df: pd.DataFrame, params: dict) -> np.ndarray:
     theta = np.array([params[k] for k in PARAM_NAMES], float)
-    k_t = k_basis(df) @ params["k_coef"]
-    return k_t * shape_term(df, theta)
+    return k_total(df, params) * shape_term(df, theta)
+
+
+def trend_curve(dates: pd.DatetimeIndex, params: dict) -> np.ndarray:
+    """dk(t) — prirustek topne citlivosti od zacatku dat (jednotky k)."""
+    if "trend_coef" not in params:
+        return np.zeros(len(dates))
+    fake = pd.DataFrame(index=dates)
+    return trend_basis(fake, params["trend_t0"], params["trend_span"]) @ params["trend_coef"]
 
 
 def k_curve(daytype: int, params: dict, tod: np.ndarray | None = None) -> np.ndarray:
@@ -121,4 +151,7 @@ def load(path: Path | None = None) -> dict:
     out = {k: raw[k] for k in raw.files}
     for k in PARAM_NAMES + ["rmse", "r2"]:
         out[k] = float(out[k])
+    if "trend_coef" in out:
+        out["trend_t0"] = str(out["trend_t0"])
+        out["trend_span"] = float(out["trend_span"])
     return out
