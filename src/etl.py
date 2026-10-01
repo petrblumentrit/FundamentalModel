@@ -52,6 +52,9 @@ def load(with_local_time: bool = True) -> pd.DataFrame:
         # behem rana, ne o pulnoci (pondelni noc je jeste vikendova)
         prev = pd.Series(pd.to_datetime(dates) - pd.Timedelta(days=1), index=df.index)
         df["po_volnu"] = ((prev.dt.dayofweek >= 5) | prev.dt.date.isin(holidays)).to_numpy()
+        # tma (astronomicka, deterministicka) pro clen osvetleni
+        import sun
+        df["tma"] = sun.darkness_15min(df.index)
     return df
 
 

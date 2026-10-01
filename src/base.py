@@ -18,6 +18,12 @@ nepusobi topeni ani chlazeni):
   [0, NIGHT_END], v NIGHT_END plynule (hodnota i sklon) odezni na nulu.
   Bez nej je profil Po-Ct kompromisem: pondelni noc model prestreluje o ~10,
   noci Ut-Ct podstreluje o 2-5.
+- osvetleni: tma(t) * aktivita(cas dne) — spotreba rizena svetlem, ne
+  hodinami (pri zmene casu se ~45 jednotek posune se soumrakem, viz
+  explore/svetlo_test.py). tma je astronomicka (src/sun.py), aktivita jsou
+  kubicke B-spliny jen v oknech usvitu a soumraku, na okrajich oken plynule
+  nulove: mimo okna je tma po cely rok stejna (poledne vzdy svetlo, pozdni
+  noc vzdy tma) a clen by tam splyval s profilem.
 - most: celodenni aditivni posun (konstanta + K_MOST harmonickych) — mosty
   jsou typovane jako patek, ale byvaji o 20-40 nize (vybirane dovolene)
 """
@@ -41,6 +47,12 @@ SMOOTH = 500.0             # vaha penalizace druhych diferenci spline koeficient
 NIGHT_END = 10.0           # [h] konec rana po volnu (diagnostika: odchylka mizi 8-9 h)
 NIGHT_KNOT = 2.0           # [h] rozestup uzlu ranniho clenu
 K_MOST = 2                 # harmonickych v korekci mostu
+# okna, kde se tma behem roku meni (mistni cas, vcetne letniho casu) [h]
+# rano jen do 8,5 h: pozdeji je tma jen v prosinci a lednu, tedy hlavne o
+# vanocnich prazdninach, a clen chytal vanocni propad (vysel zaporny)
+LIGHT_WINDOWS = ((3.0, 8.5), (15.0, 23.0))
+LIGHT_KNOT = 1.0           # [h] rozestup uzlu aktivity osvetleni
+LIGHT_RIDGE = 1.0          # ridge osvetleni ve fitu z mirnych dnu (relativne)
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 
@@ -71,6 +83,29 @@ def _night_basis(tod: np.ndarray) -> np.ndarray:
 N_NIGHT = len(np.arange(0.0, NIGHT_END + 1e-9, NIGHT_KNOT))
 
 
+def _window_knots(a: float, b: float, step: float) -> np.ndarray:
+    """Rovnomerne uzly pres cele okno, rozestup co nejblize step."""
+    return np.linspace(a, b, max(int(round((b - a) / step)), 1) + 1)
+
+
+def _window_basis(tod: np.ndarray, a: float, b: float, step: float) -> np.ndarray:
+    """Kubicke B-spliny na [a, b] bez dvou krajnich na kazde strane — na obou
+    okrajich je clen i jeho sklon nulovy, mimo okno nulovy."""
+    inner = _window_knots(a, b, step)
+    t = np.concatenate([np.repeat(inner[0], 3), inner, np.repeat(inner[-1], 3)])
+    x = np.clip(tod, a, b - 1e-9)
+    B = BSpline.design_matrix(x, t, 3).toarray()[:, 2:-2]
+    return B * ((tod >= a) & (tod < b))[:, None]
+
+
+def _light_basis(tod: np.ndarray) -> np.ndarray:
+    return np.hstack([_window_basis(tod, a, b, LIGHT_KNOT) for a, b in LIGHT_WINDOWS])
+
+
+# B-splin je (uzlu + 2), bez dvou krajnich na kazde strane
+N_LIGHT = sum(len(_window_knots(a, b, LIGHT_KNOT)) - 2 for a, b in LIGHT_WINDOWS)
+
+
 def _n_spline(span_days: float) -> int:
     return len(np.arange(0.0, span_days + KNOT_DAYS, KNOT_DAYS)) + 2
 
@@ -86,6 +121,7 @@ def _slices(span_days: float) -> dict:
     out["praz"] = slice(i, i + 1 + 2 * K_PRAZ); i += 1 + 2 * K_PRAZ
     out["noc"] = slice(i, i + N_NIGHT); i += N_NIGHT
     out["most"] = slice(i, i + 1 + 2 * K_MOST); i += 1 + 2 * K_MOST
+    out["svetlo"] = slice(i, i + N_LIGHT); i += N_LIGHT
     out["total"] = i
     return out
 
@@ -113,6 +149,7 @@ def design(df: pd.DataFrame, t0, span_days: float) -> np.ndarray:
     blocks.append(_night_basis(tod) * after_off)
     mo = most.astype(float)[:, None]
     blocks.append(np.hstack([mo, _fourier(tod, K_MOST) * mo]))
+    blocks.append(_light_basis(tod) * df["tma"].to_numpy()[:, None])
     return np.hstack(blocks)
 
 
@@ -151,6 +188,10 @@ def fit(df: pd.DataFrame, smooth: float = SMOOTH) -> dict:
     P = np.zeros((p, p))
     P[sl["level"], sl["level"]] = smooth * (D2.T @ D2)
     P += 1e-8 * np.trace(XtX) / p * np.eye(p)  # numericka stabilizace
+    # mirne dny (jaro, podzim) nepokryvaji hodiny, kdy je tma jen v zime —
+    # osvetleni tu stahnout k nule, plne ho odhadne az joint fit
+    sl_l = sl["svetlo"]
+    P[sl_l, sl_l] += LIGHT_RIDGE * np.trace(XtX) / p * np.eye(sl_l.stop - sl_l.start)
     coef = np.linalg.solve(XtX + P, X.T @ y)
     resid = y - X @ coef
     return {
@@ -201,6 +242,13 @@ def night_curve(params: dict, tod: np.ndarray | None = None) -> np.ndarray:
     if tod is None:
         tod = np.arange(0, 24, 0.25)
     return _night_basis(tod) @ params["coef"][_slices(params["span_days"])["noc"]]
+
+
+def light_curve(params: dict, tod: np.ndarray | None = None) -> np.ndarray:
+    """Spotreba osvetleni za plne tmy podle casu dne (mimo okna nulova)."""
+    if tod is None:
+        tod = np.arange(0, 24, 0.25)
+    return _light_basis(tod) @ params["coef"][_slices(params["span_days"])["svetlo"]]
 
 
 def save(params: dict, path: Path | None = None) -> Path:

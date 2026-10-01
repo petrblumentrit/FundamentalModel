@@ -278,3 +278,31 @@ Výstupy (mimo repo, `simulace/`): `predikce_D1.csv` (čas vydání, konec dat, 
 - Korekce: −2,6 RMSE celkem, −3,4 mimo Vánoce; nejvíc pomáhá v listopadu (23,0 → 15,9) a lednu (24,5 → 20,5), kde model drží úroveň za cutoffem.
 - Oba kroky se doplňují: korekce tvaru (x3) je průměr přes týden a typ dne nerozliší — na v1 nechávala pondělní noc −6,4 a středeční +5,7; na v2 jsou všechny dny ±2.
 - **Zbývá společný noční bias všech dní** (model −3 až −6 v 0–6 h; korekce ho odstraní): sezónní změna tvaru profilu (květen −15, leden +9 na v1), kandidát na krok 3 z plánu — nejdřív ověřit, zda nesedí v nočním poměru topného k(čas dne).
+
+### 2026-10-01 — spotřeba řízená světlem: test a člen osvětlení (krok 9)
+
+**Hypotéza** (uživatel): spotřebu v čase řídí dva procesy — **rozvrh** (práce, školy, obchody; drží se hodin) a **denní světlo** (veřejné i vnitřní osvětlení; drží se slunce). Úsporné zdroje by druhý proces zmenšovaly.
+
+**Test bokem modelu** (`explore/svetlo_test.py`, grafy 26–27; spotřeba očištěná o počasí, Út–Čt):
+- **Změna času jako přirozený experiment** — přes noc se hodiny posunou o hodinu vůči slunci, počasí, sezóna i rozvrh zůstanou. Rozdíl profilu 14 dní po a před změnou minus stejný rozdíl o 14 dní dřív (placebo bez změny ±6). Na jaře spotřeba klesne až o ~55 přesně v hodině mezi starým a novým západem slunce (~18:15–19:25), na podzim vzroste až o ~50 (~16:40–17:45), ráno zrcadlově menší efekt (podzim −18 v 6:45–7:40). Zbytek dne se nehne. **Potvrzeno:** soumraková složka průměrně ~43 jednotek (~7 % zátěže v té hodině), jednotlivé změny 21–62.
+- **Měsíční profily**: celkový tvar dne se kryje mnohem líp na ose hodin než na ose slunce — dominuje rozvrh; v říjnu až březnu na něm sedí večerní hrb, který na ose slunce leží ve všech měsících 0–1 h po západu.
+- **Úsporné zdroje**: pokles soumrakové složky 2022–2026 neprokázán (rozptyl mezi změnami větší než jakýkoli trend). Výkyv jaro 2024 nejspíš kvůli Velikonocům ve stejný den jako změna času (neověřeno).
+- Regrese „tma × aktivita“ přes celý den se neosvědčila (v poledne tma nenastává, křivka neurčená) — vyřazena.
+
+**Člen osvětlení v bázi** (`src/sun.py`, `src/base.py`): `L(t) = tma(t) · aktivita(čas dne)`. Tma je astronomická (výška slunce, NOAA, střed ČR; logistický přechod kolem −2°, průměr přes 15min interval) — deterministická, v predikci nepotřebuje meteo. Aktivita = kubické B-spliny jen v oknech, kde se tma během roku mění (3–8,5 h a 15–23 h), na okrajích plynule nulové (12 parametrů). Úpravy po prvním fitu:
+- ranní okno zkráceno z 9,5 na 8,5 h — v 8–9 h je tma jen v prosinci a lednu, tedy o vánočních prázdninách, a člen vyšel záporný (−49, chytal Vánoce);
+- v joint fitu omezení ≥ 0 (osvětlení jen přidává);
+- ve fitu báze z mírných dnů ridge na osvětlení — jaro a podzim nepokrývají hodiny, kdy je tma jen v zimě; bez něj neurčené koeficienty rozbily postupný fit topení (RMSE 94).
+
+**Výsledky:** osvětlení za plné tmy ~50 v 16–19 h, ~40 ve 20–21 h, ~15 v 5–7 h. Soumraková složka v reziduích nového modelu při změnách času průměrně −0,3 (dřív ~45). **Topný k(čas dne) ztratil večerní špičku v 18 h** (je teď přes den plochý) — topení dřív neslo osvětlení; T_b 17,8 → 16,1 °C, špička FVE 64 → 71. In-sample RMSE 18,26 → 17,27; sezónní vzorec reziduí (listopad 15–18 h +20 → +10, říjen 18–21 h +19 → +5, duben–červen večer −10 → ~0) zmizel z velké části.
+
+| backtest RMSE | celý rok | mimo Vánoce | 15–21 h | Vánoce |
+|---|---|---|---|---|
+| v2 model | 20,84 | 17,73 | 23,2 | 58,7 |
+| **v3 model** (+ osvětlení) | 20,26 | 16,99 | 20,6 | 58,8 |
+| v2 + korekce | 18,29 | 14,32 | – | 59,9 |
+| **v3 + korekce** | 18,11 | 14,09 | – | 59,8 |
+
+Korekce z v3 získá méně, protože část soumrakového vzorce dřív chytala sama (tvar chyby za posledních 7 dní). Noční bias modelu (−5 v 0–6 h) zůstává — to je drift tvaru přes roky (návrh B), ne osvětlení.
+
+**Další kroky:** drift tvaru přes roky — nejdřív časová změna topné složky (tepelná čerpadla místo plynu po roce 2022), pak obecný drift tvaru; vánoční blok (uživatel dodá starší data); validace mimo vzorek (krok 7) pro aktuální verzi modelu.
