@@ -10,7 +10,10 @@ Fituje se na reziduich po odectu baze (y - B) v chladnem a mirnem obdobi:
 - topna krivka:      g(T*) = s * ln(1 + exp((T_b - T*)/s))   (hladky hinge)
 - COP na okamzitou teplotu (vyparnik venku): COP(T) = max(1 + alpha*T, 0.2),
   normalizace COP(0) = 1 — absolutni skala je v k
-- k(cas dne, typ dne) = Fourier (K_TOD harmonickych) + offsety typu dne;
+- k(cas dne, typ dne) = Fourier (K_TOD harmonickych) + offsety typu dne +
+  vlastni Fourierova odchylka pro volne dny (K_TOD_OFF harmonickych): o
+  vikendu a svatku se ranni nabeh topeni posouva (se spolecnym tvarem bylo
+  reziduum volnych dni v topne sezone -12 az -16 v 7-9 h a +9 v 11-12 h);
   pro dane nelinearni parametry je model linearni v k -> separabilni LS
   (vnejsi nelinearni optimalizace jen pres 7 parametru)
 - casova zmena citlivosti: k(cas dne, typ dne) + dk(t), kde dk(t) je
@@ -36,6 +39,7 @@ from scipy.optimize import least_squares
 import pv
 
 K_TOD = 4        # harmonickych v k(cas dne)
+K_TOD_OFF = 4    # harmonickych v odchylce k pro volne dny (typ dne 2, 3)
 TREND_K_TOD = 2  # harmonickych v dennim tvaru prirustku citlivosti
 T_IN = 20.0      # vnitrni teplota pro vetrny clen [C]
 COP_FLOOR = 0.2
@@ -74,12 +78,16 @@ def t_star(df: pd.DataFrame, a: float, b: float, w: float, tau: float) -> np.nda
 
 
 def k_basis(df: pd.DataFrame) -> np.ndarray:
-    """[1, cos/sin harmonicky, dummy dt1..dt3] — sdileny tvar, offsety typu dne."""
+    """[1, cos/sin harmonicky, dummy dt1..dt3, cos/sin * volny den] — sdileny
+    tvar, offsety typu dne a odchylka tvaru pro volne dny."""
     tod = df["tod"].to_numpy()
     wv = 2 * np.pi * np.outer(tod, np.arange(1, K_TOD + 1)) / 24.0
-    dt = df["daytype"].to_numpy()
+    dt = np.broadcast_to(np.asarray(df["daytype"]), tod.shape)
     dums = np.stack([(dt == k).astype(float) for k in range(1, N_DAYTYPES)], axis=1)
-    return np.hstack([np.ones((len(df), 1)), np.cos(wv), np.sin(wv), dums])
+    off = (dt >= 2).astype(float)[:, None]
+    wo = wv[:, :K_TOD_OFF]
+    return np.hstack([np.ones((len(df), 1)), np.cos(wv), np.sin(wv), dums,
+                      np.cos(wo) * off, np.sin(wo) * off])
 
 
 def shape_term(df: pd.DataFrame, theta: np.ndarray) -> np.ndarray:

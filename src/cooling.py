@@ -24,6 +24,7 @@ from etl import step_hours
 from heating import softplus
 
 K_TOD = 4          # harmonickych v k_c(cas dne)
+K_TOD_OFF = 4      # harmonickych v odchylce k_c pro volne dny (jako u topeni)
 N_DAYTYPES = 4
 T_REF = 25.0
 EER_FLOOR = 0.3
@@ -46,12 +47,17 @@ def t_star(df: pd.DataFrame, a_c: float, w_c: float, tau_c: float) -> np.ndarray
 
 
 def k_basis(df: pd.DataFrame) -> np.ndarray:
-    """[1, cos/sin harmonicky, dummy dt1..dt3] — sdileny tvar, offsety typu dne."""
+    """[1, cos/sin harmonicky, dummy dt1..dt3, cos/sin * volny den] — sdileny
+    tvar, offsety typu dne a odchylka tvaru pro volne dny (o vikendu se rano
+    chladi jinak: se spolecnym tvarem reziduum volnych dni +16 v 6-8 h)."""
     tod = df["tod"].to_numpy()
     wv = 2 * np.pi * np.outer(tod, np.arange(1, K_TOD + 1)) / 24.0
-    dt = df["daytype"].to_numpy()
+    dt = np.broadcast_to(np.asarray(df["daytype"]), tod.shape)
     dums = np.stack([(dt == k).astype(float) for k in range(1, N_DAYTYPES)], axis=1)
-    return np.hstack([np.ones((len(df), 1)), np.cos(wv), np.sin(wv), dums])
+    off = (dt >= 2).astype(float)[:, None]
+    wo = wv[:, :K_TOD_OFF]
+    return np.hstack([np.ones((len(df), 1)), np.cos(wv), np.sin(wv), dums,
+                      np.cos(wo) * off, np.sin(wo) * off])
 
 
 def shape_term(df: pd.DataFrame, theta: np.ndarray) -> np.ndarray:

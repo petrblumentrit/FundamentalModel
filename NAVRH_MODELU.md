@@ -476,3 +476,22 @@ Plný fit na 15min datech (uložené parametry, `models/*_joint.npz`): RMSE 13,0
 Po měsících (model): červenec 22,0 → 18,2, srpen 21,2 → 16,1, květen 17,6 → 14,2; bias červenec −10,7 → −3,5, srpen −12,0 → −2,7. Samotný osvit s teplotou zhoršil leden a únor (bias −3,6 → −8,6): nadhodnocený zimní osvit dřív náhodou kompenzoval nadhodnocený vítr; s opravou větru je zimní bias stejný jako se skutečným počasím (leden −3,8 vs −3,7). Červen se zhoršil (14,3 → 17,3) — bias +8 odpovídá běhu se skutečným počasím (+5,6), dřív ho kryla chyba předpovědi.
 
 Rozdíl proti běhu se skutečným počasím (12,42) zůstává 4,8 RMSE: po složkách topení 7,1, chlazení 4,8, FVE 4,7, báze (šero) 3,2 (v zimě v poledne šero z předpovědi v průměru o 3–4 jednotky nižší než skutečné) — převážně náhodná chyba předpovědi, kterou kalibrace neodstraní; další zlepšení už jen lepším vstupem (osvit přímo z numerického modelu, víc zdrojů předpovědi).
+
+### 2026-10-02 — vlastní denní tvar topení a chlazení pro volné dny (krok 28)
+
+**Diagnostika** (rezidua plného fitu po hodinách, typu dne a režimu): denní tvar topné citlivosti k(čas dne) i chladicí k_c byl společný pro všechny typy dnů (typ dne jen posouval úroveň). O víkendech a svátcích se ale ranní náběh posouvá: v topných dnech (topná složka > 100) reziduum volných dnů **−12 až −16 v 7–9 h a +9 v 11–12 h**, pracovní dny naopak +8 v 7–8 h (společný tvar byl kompromis); u chlazení zrcadlově — volné dny +16 až +17 v 6–8 h a −7 až −9 v 11–12 h, pracovní −12 v 7 h. Sobota a neděle se chovají stejně. Proto byly víkendy v backtestu horší (sobota 13,5, neděle 14,4 proti pátku 10,6).
+
+**Úprava** (`src/heating.py`, `src/cooling.py`): k i k_c dostaly Fourierovu odchylku pro volné dny (typ dne 2 a 3; 4 harmonické, +8 parametrů v každém členu, lineární krok fitu).
+
+| backtest | RMSE | MAPE | + korekce | + korekce MAPE |
+|---|---|---|---|---|
+| v9 šero přes den | 13,85 | 1,63 % | 12,42 | 1,438 % |
+| **v10 tvar topení/chlazení pro volné dny** | **13,41** | **1,58 %** | **11,94** | **1,381 %** |
+| realisticky (předpověď počasí) v9 + krok 27 | 18,27 | 2,04 % | 17,25 | 1,909 % |
+| **realisticky v10** | **17,95** | **2,00 %** | **16,93** | **1,868 %** |
+
+Hodinový fit celého řetězce 12,22 → 11,77. Leden 12,8 → 11,6 (s korekcí), červenec 13,8 → 12,8, listopad 12,7 → 11,9.
+
+**Korekční vrstva — tvar chyby podle třídy dne** (zkoušeno, nezavedeno): tvar chyby x3 počítaný zvlášť z posledních pracovních a zvlášť z posledních volných dnů dával na v9 12,42 → 12,20; po opravě v modelu už nic (11,94 beze změny vs 12,03, realisticky 16,93 vs 17,00). Chyba byla strukturální, ne drift — korekce zůstává beze změny. Nepomohl ani pomalý bias (průměr chyby posledních 7 dní) a chyba stejného dne minulého týdne.
+
+Plný fit na 15min datech: RMSE 12,71 → **12,26**.
