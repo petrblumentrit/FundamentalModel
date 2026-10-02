@@ -44,6 +44,11 @@ PARAM_NAMES = ["a", "b", "t_b", "s", "w", "tau", "alpha"]
 LOWER = np.array([0.0, 0.0, 10.0, 0.5, 0.0, 4.0, 0.0])
 UPPER = np.array([0.05, 0.03, 18.0, 6.0, 1.0, 120.0, 0.06])
 X0 = np.array([0.01, 0.005, 14.5, 2.5, 0.5, 36.0, 0.02])
+# slaby prior (stred, sm. odchylka) pro joint fit: s trendem topeni s dennim
+# tvarem a vanocnimi cleny se tvar krivky posouval po temer plochem udoli
+# (s -> horni mez, T_b dolu, alpha -> 0) a fit trval desitky minut. Hodnoty z
+# validace mimo vzorek (T_b 17,5-18, s 1,8-2,9, tau 63-87 h).
+PRIOR = {"t_b": (17.0, 1.5), "s": (2.0, 1.0), "tau": (80.0, 20.0), "alpha": (0.012, 0.008)}
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 

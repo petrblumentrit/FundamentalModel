@@ -52,6 +52,8 @@ uv run python explore/validation.py       # 7    validace mimo vzorek (--plot-on
 uv run python explore/backtest.py         # 8    simulace predikce D+1 za posledni rok (--plot-only)
 uv run python explore/svetlo_test.py      # 9    test spotreby rizene svetlem (zmena casu)
 uv run python explore/zd_analyza.py       # 14   srovnani s domacnostmi PRE (data OTE v Analyza/)
+uv run python explore/vanoce_analyza.py   # 17   Vanoce 2022-2025 (rezidua po dnech a skupinach)
+uv run python explore/ceps_analyza.py     # 19   zatizeni CR (CEPS/ENTSO-E) a predpoved CEPS
 ```
 
 Výsledky simulace predikce (CSV + offline interaktivní HTML graf) jdou do
@@ -60,6 +62,9 @@ Výsledky simulace predikce (CSV + offline interaktivní HTML graf) jdou do
 Diagnostické grafy se ukládají do `explore/`, parametry do `models/`
 (`*_params.npz` ze sekvenčního odhadu, `*_joint.npz` ze závěrečného
 společného fitu — pro produkční použití ty druhé).
+
+Kalendář (svátky, mosty, prázdniny, vánoční skupiny dnů) se nastavuje v
+`config/kalendar.yaml`; po změně skupin je potřeba přepočítat fity.
 
 ## Moduly
 
@@ -75,5 +80,6 @@ společného fitu — pro produkční použití ty druhé).
 | `src/validate.py` | fit z části dat (maska řádků) pro validaci mimo vzorek |
 | `src/backtest.py` | simulace provozní predikce D+1 (denní přefit z dat do D 09:00) |
 | `src/sun.py` | poloha slunce a tma (astronomicky) pro člen osvětlení |
-| `src/ote.py` | načítání dat OTE (zbytkové diagramy, KZD, přepočtené TDD) z `Analyza/` |
+| `src/ote.py` | načítání dat OTE (zbytkové diagramy, KZD, přepočtené TDD), ČEPS a ENTSO-E z `Analyza/` |
+| `src/kalendar.py` | kalendář z `config/kalendar.yaml`: svátky, mosty, prázdniny, zvláštní období (Vánoce) |
 | `src/correction.py` | korekce predikce D+1 z chyb dřívějších predikcí (online, reziduová vrstva) |

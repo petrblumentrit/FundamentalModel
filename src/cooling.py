@@ -30,6 +30,8 @@ PARAM_NAMES = ["a_c", "t_bc", "s_c", "w_c", "tau_c", "alpha_c"]
 LOWER = np.array([0.0, 16.0, 0.5, 0.0, 0.25, 0.0])
 UPPER = np.array([0.10, 26.0, 6.0, 1.0, 72.0, 0.06])
 X0 = np.array([0.02, 21.0, 2.0, 0.5, 6.0, 0.02])
+# slaby prior pro joint fit (viz heating.PRIOR); validace: T_bc 17,1-18,7, s_c 2,1-2,4
+PRIOR = {"t_bc": (18.0, 1.5), "s_c": (2.0, 1.0)}
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 

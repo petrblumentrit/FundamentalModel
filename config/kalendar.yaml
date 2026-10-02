@@ -1,0 +1,37 @@
+# Kalendar portfolia: svatky, mosty, prazdniny a zvlastni obdobi.
+# Nacita src/kalendar.py. Data jsou "MM-DD"; Velikonoce posunem od
+# Velikonocni nedele. Zmena skupin obdobi meni strukturu baze -> prepocitat
+# fity (explore/base_fit.py ... joint_fit.py).
+
+svatky:
+  pevne: ["01-01", "05-01", "05-08", "07-05", "07-06", "09-28", "10-28", "11-17",
+          "12-24", "12-25", "12-26"]
+  velikonoce:                     # posun ve dnech od Velikonocni nedele
+    velky_patek: -2
+    velikonocni_pondeli: 1
+  # zakaz prodeje ve velkych obchodech (zakon 223/2016); 24. 12. jen odpoledne,
+  # proto neni v seznamu. Zatim jen informativni, model ho nepouziva.
+  zakaz_prodeje: ["01-01", "velikonocni_pondeli", "05-08", "09-28", "10-28", "12-25", "12-26"]
+
+mosty:
+  # pracovni dny sevrene volnem (vikend/svatek) z obou stran; 2 pokryje napr.
+  # Po-Ut pred stredecnim Stedrym dnem nebo Ct-Pa po stredecnim Novem roce
+  max_pracovnich_dnu: 2
+
+prazdniny:
+  letni: {od: "07-01", do: "08-31"}
+
+# Zvlastni obdobi: kazda skupina je aditivni clen baze s vlastnim dennim
+# tvarem (konstanta + `harmonicke` Fourierovych harmonickych). Skupiny se
+# mohou prekryvat (Silvestr se pricita k mezi_svatky_*).
+#   dny: seznam dat, nebo od/do (rozsah, muze prechazet pres Novy rok)
+#   dny_v_tydnu: vse (vychozi) | pracovni | vikend  (pracovni = ne vikend, ne svatek)
+obdobi:
+  vanoce:
+    stedry_den:         {dny: ["12-24"], harmonicke: 8}   # vecere -> propad, TV -> navrat
+    bozi_hod:           {dny: ["12-25"], harmonicke: 4}
+    sv_stepan:          {dny: ["12-26"], harmonicke: 4}
+    mezi_svatky_prac:   {od: "12-27", do: "12-31", dny_v_tydnu: pracovni, harmonicke: 4}
+    mezi_svatky_vikend: {od: "12-27", do: "12-31", dny_v_tydnu: vikend, harmonicke: 2}
+    silvestr:           {dny: ["12-31"], harmonicke: 4}
+    novy_rok:           {dny: ["01-01"], harmonicke: 8}   # pulnocni oslavy, dopoledni propad

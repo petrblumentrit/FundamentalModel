@@ -91,7 +91,8 @@ def refit(df: pd.DataFrame, mask: np.ndarray, warm: tuple | None,
     pp = dict(pp)
     pp["t0"] = str(idx[0])
     pp["span_days"] = float((idx[-1] - idx[0]).total_seconds() / 86400.0) + 1.0
-    return fit.joint(df, bp, hp, cp, pp, mask=mask, fix_shape=fix_shape)
+    # warm start je blizko — 100 iteraci staci, pojistka proti pomale konvergenci
+    return fit.joint(df, bp, hp, cp, pp, mask=mask, fix_shape=fix_shape, max_nfev=100)
 
 
 def components(df: pd.DataFrame, params: tuple) -> pd.DataFrame:

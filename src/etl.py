@@ -43,7 +43,8 @@ def load(with_local_time: bool = True) -> pd.DataFrame:
         # Svatky tak prebiraji profily naucene z ~240 vikendu misto nedele pro
         # vsechny; pro bezne tydny se nic nemeni. Volno vcera nese ranni clen
         # po volnu (po_volnu).
-        holidays = _cz_holidays(loc.year.min(), loc.year.max() + 1)
+        import kalendar
+        holidays = kalendar.holidays(loc.year.min() - 1, loc.year.max() + 1)
         dates = pd.Series(loc.date, index=df.index)
         days = pd.to_datetime(dates)
         off = ((df["dow"] >= 5) | dates.isin(holidays)).to_numpy()
@@ -51,10 +52,15 @@ def load(with_local_time: bool = True) -> pd.DataFrame:
         off_next = ((nxt.dt.dayofweek >= 5) | nxt.dt.date.isin(holidays)).to_numpy()
         df["daytype"] = np.select([~off & ~off_next, ~off & off_next, off & off_next],
                                   [0, 1, 2], default=3)
-        # mosty: pracovni den sevreny mezi svatkem a vikendem/svatkem (role 1)
-        df["most"] = dates.isin(_bridges(holidays)).to_numpy()
+        # mosty: 1-2 pracovni dny sevrene volnem (config/kalendar.yaml)
+        runs = kalendar.bridge_runs(holidays)
+        df["most"] = dates.isin(set(runs)).to_numpy()
+        df["most_delka"] = dates.map(runs).fillna(0).astype(int).to_numpy()
         # letni prazdniny (dominantni skolni volno)
-        df["prazdniny"] = loc.month.isin([7, 8])
+        df["prazdniny"] = kalendar.summer_holidays(dates)
+        # zvlastni obdobi (Vanoce ...): priznak pro kazdou skupinu z configu
+        for name, flag in kalendar.period_flags(dates, holidays).items():
+            df["obd_" + name] = flag
         # predchozi kalendarni den volny (vikend/svatek) — rezim noci se meni az
         # behem rana, ne o pulnoci (pondelni noc je jeste vikendova)
         prev = pd.Series(pd.to_datetime(dates) - pd.Timedelta(days=1), index=df.index)
@@ -66,47 +72,12 @@ def load(with_local_time: bool = True) -> pd.DataFrame:
 
 
 def _bridges(holidays: set) -> set:
-    """Pracovni dny sevrene mezi svatkem a vikendem/svatkem."""
-    from datetime import timedelta
-
-    out = set()
-    for h in holidays:
-        for d in (h - timedelta(days=1), h + timedelta(days=1)):
-            if d.weekday() >= 5 or d in holidays:
-                continue
-            prev_off = (d - timedelta(days=1)).weekday() >= 5 or (d - timedelta(days=1)) in holidays
-            next_off = (d + timedelta(days=1)).weekday() >= 5 or (d + timedelta(days=1)) in holidays
-            if prev_off and next_off:
-                out.add(d)
-    return out
+    """Mosty podle config/kalendar.yaml (obal kvuli starsim volanim)."""
+    import kalendar
+    return kalendar.bridges(holidays)
 
 
 def _cz_holidays(y0: int, y1: int) -> set:
-    """Ceske statni svatky vcetne pohyblivych (Velky patek, Velikonocni pondeli)."""
-    from datetime import date, timedelta
-
-    fixed = [(1, 1), (5, 1), (5, 8), (7, 5), (7, 6), (9, 28), (10, 28), (11, 17), (12, 24), (12, 25), (12, 26)]
-    out = set()
-    for y in range(y0, y1 + 1):
-        out.update(date(y, m, d) for m, d in fixed)
-        e = _easter(y)
-        out.add(e - timedelta(days=2))  # Velky patek
-        out.add(e + timedelta(days=1))  # Velikonocni pondeli
-    return out
-
-
-def _easter(year: int):
-    """Anonymni gregoriansky algoritmus."""
-    from datetime import date
-
-    a, b, c = year % 19, year // 100, year % 100
-    d, e = b // 4, b % 4
-    f = (b + 8) // 25
-    g = (b - f + 1) // 3
-    h = (19 * a + b - d - g + 15) % 30
-    i, k = c // 4, c % 4
-    m = (32 + 2 * e + 2 * i - h - k) % 7
-    n = (a + 11 * h + 22 * m) // 451
-    month = (h + m - 7 * n + 114) // 31
-    day = (h + m - 7 * n + 114) % 31 + 1
-    return date(year, month, day)
+    """Statni svatky podle config/kalendar.yaml (obal kvuli starsim volanim)."""
+    import kalendar
+    return kalendar.holidays(y0, y1)

@@ -359,3 +359,26 @@ Korekce z v3 získá méně, protože část soumrakového vzorce dřív chytala
 Zimní bias má vyrovnaný tvar (dřív noc −0,3 / odpoledne +15,5, nyní +3 až +9 přes celý den) — zbývá úroveň: **Vánoce (20. 12. – 6. 1.) jsou in-sample o −23,6 pod modelem a stahují zbytek zimy (+2,8)**, protože model vyrovnává zimu jako celek. Podzimní odpoledne +11 (část zpoždění nástupu sezóny), jarní noc −4,3.
 
 **Další kroky:** vánoční blok (pracovní dny 22. 12. – 3. 1., svátky 25.–26. 12., Štědrý večer: příprava jídla → špička, večeře → pokles, televize → nárůst) — pomůže i zbytku zimy; letní chvost topení vs úroveň; validace mimo vzorek pro aktuální verzi.
+
+### 2026-10-02 — kalendář v konfiguraci, vánoční blok, prior na tvar, data ČEPS (kroky 16–19)
+
+**16 — konfigurace kalendáře** (`config/kalendar.yaml`, `src/kalendar.py`): svátky (pevné + Velikonoce posunem od neděle), dny se zákazem prodeje (zatím jen informativně), mosty, prázdniny a zvláštní období se skupinami dnů. ETL i báze berou kalendář z konfigurace; změna skupin mění strukturu báze (přepočítat fity).
+- **Mosty rozšířeny na 1–2 pracovní dny** sevřené volnem (aspoň z jedné strany svátek) — pokrývá např. Po–Út před středečním Štědrým dnem (22.–23. 12. 2025) nebo Čt–Pá po středečním Novém roce (2.–3. 1. 2025). Jednodenní a dvoudenní mosty mají oddělené celodenní členy, mosty uvnitř zvláštních období se z nich vyjímají.
+
+**17 — vánoční blok** (analýza `explore/vanoce_analyza.py`, grafy 31–32): Vánoce 2022–2025 jsou mezi roky velmi konzistentní — 24. 12. −7,4 % ±0,5 (propad v 19–20 h až −155 = večeře, návrat do půlnoci = televize), 25. 12. −11 %, 26. 12. −8 %, 27.–30. 12. pracovní ~−10 % (víkend poloviční), 31. 12. −7 % ±4,4 (závisí na dni v týdnu), 1. 1. −8 % ±0,5 (v noci +40 oslavy, dopoledne −120). Okrajové dny (21.–23. 12., 2.–3. 1.) jsou nízko jen jako mosty. Skupiny v konfiguraci (každá aditivní člen s vlastním denním tvarem): `stedry_den` (8 harmonických), `bozi_hod`, `sv_stepan`, `mezi_svatky_prac`, `mezi_svatky_vikend`, `silvestr` (přičítá se k mezi svátky), `novy_rok` (8 harm.) — 75 parametrů. Vánoce dřív stahovaly celou zimu (in-sample −23,6 o Vánocích, zbytek zimy +2,8); po zavedení odhad růstu topné citlivosti +23 → +34 %.
+- In-sample RMSE 16,58 → 13,14 (prosinec 38 → 17, leden 18,4 → 13,1).
+
+**18 — prior na parametry tvaru a paměť workerů** (`src/fit.py`, `heating.PRIOR`, `cooling.PRIOR`, `explore/backtest.py`): s vánočními členy a trendem topení s denním tvarem se tvar topné křivky v joint fitu posouval po téměř plochém údolí (šířka s → horní mez 6, T_b dolů, COP → 0) a fity tvaru trvaly až 86 min (i samostatně > 28 min). Slabý prior (T_b 17 ± 1,5 °C, s 2 ± 1, τ 80 ± 20 h, α 0,012 ± 0,008; T_bc 18 ± 1,5, s_c 2 ± 1 — z validace mimo vzorek): 1 sm. odch. stojí ~1 % součtu čtverců, data rozhodují, prior ukotví ploché směry → fit 75–81 s, 12 iterací. Pojistka max. 100 iterací při warm startu. Worker backtestu zabere ~1,3 GB — při 24 workerech na 32 GB systém odkládal na disk (~20× zpomalení); počet workerů nyní podle volné paměti (~1,4 GB/worker, `--workers=N`). Backtest 14,3 min.
+
+| backtest | RMSE | MAPE | mimo Vánoce | Vánoce | + korekce | + korekce MAPE | + korekce mimo Vánoce |
+|---|---|---|---|---|---|---|---|
+| v6 trend s tvarem | 19,31 | 1,92 % | 14,61 | 66,1 | 17,88 | 1,70 % | 12,89 |
+| **v7 Vánoce + prior** | **14,48** | **1,67 %** | **13,85** | **25,6** | **13,09** | **1,49 %** | **12,52** |
+
+Vánoce 2025/26 (naučené jen z 2022–2024), RMSE dne v6 → v7: 24. 12. 84 → 24, 25. 12. 112 → 33, 29.–30. 12. 77 → 8–10, 31. 12. 86 → 15, 1. 1. 75 → 21; leden 23,0 → 14,2. Zbývá: dvoudenní most 22.–23. 12. (~36), most 2. 1. 2026 se zhoršil (19 → 32), duben 12,5 → 13,9 (ověřit vliv prioru).
+
+**19 — zatížení ČR (ČEPS, ENTSO-E)** (`src/ote.py`: `ceps()` z CSV portálu ČEPS, `entsoe_load()` z ENTSO-E Transparency; `explore/ceps_analyza.py`): CSV ČEPS je v CET/CEST, hodinově, MW (průměr 2025 7 732 MW vs čistá spotřeba ČSÚ 6 932 MW — zatížení obsahuje ztráty); ENTSO-E (skutečné zatížení + denní předpověď ČEPS, do 2024 hodinově, od 2025 15min) ~0,92× CSV ČEPS, korelace 0,996. Denní předpověď ČEPS má hodinové MAPE 1,2–1,5 %.
+- Model na zatížení ČR (jedna meteostanice — topení jen orientačně, parametry na mezích): **krize 2022 celostátně −5,4 %** (portfolio −2,7 %), ČR se dosud nevrátila, portfolio od 2025 nad 2022; **růst topné citlivosti je specifický pro portfolio** (ČR bez jasného trendu, portfolio +24/+39/+50 % noc/poledne/18 h); portfolio je citlivější na osvětlení (9,8 vs 5,8 % průměru v 17 h); FVE v ENTSO-E zatížení nevidět (zahrnuje spotřebu krytou decentrální výrobou).
+- Nevysvětlené odchylky portfolia a ČR korelují 0,32–0,33. „Překvapení ČEPS“ (předpověď ČEPS / model ČR z dat před backtestem − 1) jako vstup korekce: RMSE 13,09 → 12,85, ale jen díky Vánocům, mimo Vánoce 12,52 → 12,60, MAPE beze změny → **zatím nepřidávat**. Backtest ale používá skutečné meteo, předpověď ČEPS předpovězené — přínos jeho předpovědi počasí tu nejde změřit; vrátit se s archivem meteo předpovědí a ověřit čas zveřejnění.
+
+**Další kroky:** mosty kolem Vánoc (22.–23. 12., 2. 1.); vliv prioru na jaro; letní chvost topení vs úroveň; archiv meteo předpovědí (realistický backtest, přínos ČEPS); validace mimo vzorek pro aktuální verzi.

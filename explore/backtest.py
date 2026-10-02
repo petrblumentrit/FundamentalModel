@@ -32,10 +32,36 @@ for _a in sys.argv:
         OUT = ROOT / _a.split("=", 1)[1]
     if _a.startswith("--okno="):
         WINDOW = int(_a.split("=", 1)[1])
-# worker zabere ~0,4 GB RAM; ulohy faze 1 i 2 jsou nezavisle, takze rozhoduje
-# pocet jader
-N_WORKERS = 24
+# worker zabere ~1,3 GB RAM (vanocni cleny, trend topeni s dennim tvarem);
+# pri nedostatku pameti system odklada na disk a vypocet se zpomali ~20x
+# (24 workeru na 32 GB: fity tvaru 40 min misto 2 min). Pocet workeru proto
+# podle volne pameti, nejvys pocet jader; --workers=N rucne.
+GB_PER_WORKER = 1.4
 THREADS = 1
+
+
+def _free_gb() -> float:
+    try:
+        import ctypes
+
+        class MEMSTAT(ctypes.Structure):
+            _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                        ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+        m = MEMSTAT(); m.dwLength = ctypes.sizeof(MEMSTAT)
+        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+        return m.ullAvailPhys / 1e9
+    except Exception:
+        return os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") / 1e9
+
+
+def n_workers() -> int:
+    for a in sys.argv:
+        if a.startswith("--workers="):
+            return int(a.split("=", 1)[1])
+    return max(1, min(os.cpu_count() or 1, int((_free_gb() - 1.0) / GB_PER_WORKER)))
 
 _df = None
 
@@ -98,12 +124,14 @@ def simulate():
     print(f"faze 0 hotova za {time.time() - t:.0f} s", flush=True)
     for v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
         os.environ[v] = str(THREADS)   # dedi az workery spustene nize
-    with ProcessPoolExecutor(N_WORKERS, initializer=_init) as ex:
+    nw = n_workers()
+    print(f"workeru: {nw} (volna pamet {_free_gb():.1f} GB)", flush=True)
+    with ProcessPoolExecutor(nw, initializer=_init) as ex:
         shapes = {sdays[0]: p0}
         # nejdrive pozdejsi pondeli: jsou dal od warm startu, fit trva dele
         shapes.update(dict(ex.map(_shape, [(d, p0, WINDOW) for d in reversed(sdays[1:])])))
         print(f"faze 1 ({len(sdays)} tvaru) hotova za {time.time() - t:.0f} s", flush=True)
-        chunks = [list(c) for c in np.array_split(np.array(issue_days, dtype=object), 3 * N_WORKERS)]
+        chunks = [list(c) for c in np.array_split(np.array(issue_days, dtype=object), 3 * nw)]
         res = list(ex.map(_days, [(c, shapes, WINDOW) for c in chunks]))
     print(f"simulace hotova za {(time.time() - t) / 60:.1f} min", flush=True)
 

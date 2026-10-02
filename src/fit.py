@@ -51,6 +51,11 @@ def bounded_lstsq(A: np.ndarray, y: np.ndarray, lb: np.ndarray, ub: np.ndarray,
 PV_SMOOTH = 5.0
 # penalizace zmen tempa prirustku topne citlivosti (relativne k A'A bloku)
 HEAT_TREND_SMOOTH = 5.0
+# vaha prioru na parametry tvaru (heating.PRIOR, cooling.PRIOR): odchylka o
+# 1 sm. odch. stoji PRIOR_WEIGHT * n * PRIOR_REF_RMSE^2, tj. ~1 % souctu
+# ctvercu pri typicke chybe — data rozhoduji, prior jen ukotvi ploche smery
+PRIOR_WEIGHT = 0.01
+PRIOR_REF_RMSE = 15.0
 
 
 def _pv_penalty(n_c: int, n_p: int, gram_pv: float, lam: float) -> np.ndarray:
@@ -202,10 +207,20 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     lower = np.concatenate([heating.LOWER, cooling.LOWER, [0.0]])
     upper = np.concatenate([heating.UPPER, cooling.UPPER, [0.01]])
     x0 = np.clip(x0, lower + 1e-9, upper - 1e-9)
+    names = heating.PARAM_NAMES + cooling.PARAM_NAMES + ["gamma"]
+    pri = {**heating.PRIOR, **cooling.PRIOR}
+    p_idx = np.array([names.index(k) for k in pri])
+    p_mu = np.array([pri[k][0] for k in pri])
+    p_sd = np.array([pri[k][1] for k in pri])
+    p_w = np.sqrt(PRIOR_WEIGHT * len(y) * PRIOR_REF_RMSE**2)
+
+    def residuals(q):
+        return np.concatenate([inner(q)[1], p_w * (q[p_idx] - p_mu) / p_sd])
+
     if fix_shape:
         q = x0
     else:
-        q = least_squares(lambda q: inner(q)[1], x0, bounds=(lower, upper),
+        q = least_squares(residuals, x0, bounds=(lower, upper),
                           diff_step=1e-3, x_scale=upper - lower, max_nfev=max_nfev).x
     coef, res = inner(q)
 

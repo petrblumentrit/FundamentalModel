@@ -1,5 +1,6 @@
-"""Nacitani dat OTE: zbytkove diagramy (ZD), jejich koeficienty (KZD) a
-prepoctene typove diagramy dodavek (TDD). Soubory v Analyza/ (mimo repo).
+"""Nacitani dat OTE: zbytkove diagramy (ZD), jejich koeficienty (KZD),
+prepoctene typove diagramy dodavek (TDD) a zatizeni soustavy CEPS. Soubory v
+Analyza/ (mimo repo).
 
 Formaty se lisi podle obdobi: do 6/2024 hodinova data (sloupec "Hodina",
 .xls/.xlsx), od 7/2024 ctvrthodinova ("Perioda"). Obe varianty jdou od mistni
@@ -60,3 +61,54 @@ def kzd_pre() -> pd.Series:
 def tdd() -> pd.DataFrame:
     cols = {6: "TDD4", 9: "TDD5_Praha", 15: "TDD6", 16: "TDD7", 17: "TDD8"}
     return load("Prepoctene_TDD", cols, energy=False)
+
+
+def ceps(cerpani: bool = False) -> pd.Series:
+    """Zatizeni soustavy CEPS [MW], hodinove prumery na UTC ose.
+
+    Zdroj Analyza/CEPS.csv — export z portalu CEPS (hodinova agregace
+    prumerem), sloupce "Zatizeni s cerpanim [MW]" a "Zatizeni [MW]" (bez
+    cerpani precerpavacich elektraren, vychozi). Soubor je v mistnim case (dny
+    zmeny casu 23/25 hodin, podzimni hodina dvakrat); hodiny jdou po rade od
+    mistni pulnoci, takze UTC = mistni pulnoc + poradi hodiny ve dni.
+    Kontrola: prumer 2025 7 732 MW vs cista spotreba CR dle CSU 6 932 MW
+    (zatizeni obsahuje i ztraty).
+    """
+    c = pd.read_csv(DIR / "CEPS.csv", sep=";", skiprows=2, encoding="utf-8-sig")
+    c = c.iloc[:, :3]
+    c.columns = ["ts", "s_cerpanim", "zatizeni"]
+    ts = pd.to_datetime(c["ts"], format="%d.%m.%Y %H:%M")
+    day = ts.dt.normalize()
+    midnight = day.dt.tz_localize(TZ).dt.tz_convert("UTC")
+    idx = midnight + pd.to_timedelta(c.groupby(day).cumcount(), unit="h")
+    col = "s_cerpanim" if cerpani else "zatizeni"
+    return pd.Series(c[col].astype(float).to_numpy(), index=pd.DatetimeIndex(idx), name="ceps").dropna()
+
+
+def entsoe_load() -> pd.DataFrame:
+    """ENTSO-E Transparency, BZN|CZ: skutecne zatizeni a denni predpoved CEPS
+    [MW], hodinove prumery na UTC ose (Analyza/GUI_TOTAL_LOAD_DAYAHEAD_*.csv).
+
+    MTU je v CET/CEST (podzimni hodina oznacena "(CEST)"/"(CET)"); radky jdou
+    po rade od mistni pulnoci, takze UTC = mistni pulnoc + poradi * krok.
+    Do 2024 hodinove, od 2025 ctvrthodinove. Duplicitni soubory ("(1)") se
+    ignoruji, prazdne hodnoty ("-", "n/e") jsou NaN.
+    """
+    parts = []
+    for f in sorted(DIR.glob("GUI_TOTAL_LOAD_DAYAHEAD_*.csv")):
+        if "(" in f.stem:
+            continue
+        c = pd.read_csv(f, na_values=["-", "n/e"])
+        c.columns = ["mtu", "area", "actual", "da"]
+        start = c["mtu"].str.slice(0, 16)
+        t0 = pd.to_datetime(start, format="%d/%m/%Y %H:%M")
+        day = t0.dt.normalize()
+        end = pd.to_datetime(c["mtu"].str.extract(r"- (\d\d/\d\d/\d{4} \d\d:\d\d)")[0], format="%d/%m/%Y %H:%M")
+        step = int((end.iloc[0] - t0.iloc[0]).total_seconds() // 60)
+        midnight = day.dt.tz_localize(TZ).dt.tz_convert("UTC")
+        idx = midnight + pd.to_timedelta(c.groupby(day).cumcount() * step, unit="min")
+        parts.append(pd.DataFrame({"actual": c["actual"].astype(float).to_numpy(),
+                                   "da": c["da"].astype(float).to_numpy()}, index=pd.DatetimeIndex(idx)))
+    out = pd.concat(parts)
+    out = out.groupby(out.index.floor("h")).mean()
+    return out.dropna(how="all").sort_index()

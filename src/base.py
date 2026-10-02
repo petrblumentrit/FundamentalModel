@@ -25,7 +25,11 @@ nepusobi topeni ani chlazeni):
   nulove: mimo okna je tma po cely rok stejna (poledne vzdy svetlo, pozdni
   noc vzdy tma) a clen by tam splyval s profilem.
 - most: celodenni aditivni posun (konstanta + K_MOST harmonickych) — mosty
-  jsou typovane jako patek, ale byvaji o 20-40 nize (vybirane dovolene)
+  jsou typovane jako patek, ale byvaji o 20-40 nize (vybirane dovolene);
+  zvlast jednodenni a dvoudenni mosty (dvoudenni byvaji slabsi), mimo
+  zvlastni obdobi (Vanoce maji vlastni cleny)
+- zvlastni obdobi (config/kalendar.yaml, napr. Vanoce): kazda skupina dnu
+  aditivni clen s vlastnim dennim tvarem (konstanta + harmonicke z configu)
 """
 from pathlib import Path
 
@@ -33,6 +37,7 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import BSpline
 
+import kalendar
 from etl import TZ
 
 K_PROFILE = 12  # harmonickych v dennim profilu
@@ -121,7 +126,10 @@ def _slices(span_days: float) -> dict:
     out["praz"] = slice(i, i + 1 + 2 * K_PRAZ); i += 1 + 2 * K_PRAZ
     out["noc"] = slice(i, i + N_NIGHT); i += N_NIGHT
     out["most"] = slice(i, i + 1 + 2 * K_MOST); i += 1 + 2 * K_MOST
+    out["most2"] = slice(i, i + 1 + 2 * K_MOST); i += 1 + 2 * K_MOST
     out["svetlo"] = slice(i, i + N_LIGHT); i += N_LIGHT
+    for name, k in kalendar.period_groups():
+        out["obd_" + name] = slice(i, i + 1 + 2 * k); i += 1 + 2 * k
     out["total"] = i
     return out
 
@@ -147,9 +155,17 @@ def design(df: pd.DataFrame, t0, span_days: float) -> np.ndarray:
     most = df["most"].to_numpy()
     after_off = (df["po_volnu"].to_numpy() & (dt <= 1) & ~most).astype(float)[:, None]
     blocks.append(_night_basis(tod) * after_off)
-    mo = most.astype(float)[:, None]
-    blocks.append(np.hstack([mo, _fourier(tod, K_MOST) * mo]))
+    groups = kalendar.period_groups()
+    in_period = np.zeros(len(df), bool)
+    for name, _ in groups:
+        in_period |= df["obd_" + name].to_numpy()
+    for n_run in (1, 2):
+        mo = (most & ~in_period & (df["most_delka"].to_numpy() == n_run)).astype(float)[:, None]
+        blocks.append(np.hstack([mo, _fourier(tod, K_MOST) * mo]))
     blocks.append(_light_basis(tod) * df["tma"].to_numpy()[:, None])
+    for name, k in groups:
+        g = df["obd_" + name].to_numpy(float)[:, None]
+        blocks.append(np.hstack([g, _fourier(tod, k) * g]) if k else g)
     return np.hstack(blocks)
 
 
