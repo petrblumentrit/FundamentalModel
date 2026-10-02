@@ -11,6 +11,7 @@ import pandas as pd
 LAT, LON = 49.8, 15.5        # stred CR
 DARK_MID = -2.0              # [deg] vyska slunce, kde je "pul tmy"
 DARK_WIDTH = 1.5             # [deg] sirka prechodu (soumrak trva ~30-40 min)
+GLOOM_I0 = 40.0              # [W/m2] osvit, pri kterem sero pres den klesne na 1/e
 
 
 def _solar(ts_utc: pd.DatetimeIndex):
@@ -49,6 +50,13 @@ def sun_times(dates: pd.DatetimeIndex) -> tuple[pd.Series, pd.Series]:
 def darkness(elev: np.ndarray) -> np.ndarray:
     """Plynula tma: 0 za dne, 1 po obcanskem soumraku."""
     return 1 / (1 + np.exp((elev - DARK_MID) / DARK_WIDTH))
+
+
+def gloom(tma: np.ndarray, ghi: np.ndarray) -> np.ndarray:
+    """Sero pres den: 1 pri nulovem osvitu za dne (tezka oblacnost, mlha), 0 za
+    jasneho dne i v noci (tmu nese astronomicka `tma`). Zavisi na pocasi —
+    v predikci se pocita z predpovedi osvitu."""
+    return (1.0 - np.asarray(tma, float)) * np.exp(-np.maximum(np.asarray(ghi, float), 0.0) / GLOOM_I0)
 
 
 def darkness_15min(index_utc: pd.DatetimeIndex) -> np.ndarray:

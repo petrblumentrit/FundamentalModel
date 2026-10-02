@@ -171,6 +171,7 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     lb = np.full(p, -np.inf)
     lb[sl_pv] = 0.0              # kapacita FVE neklesajici
     lb[sl_b["svetlo"]] = 0.0     # osvetleni za tmy jen pridava spotrebu
+    lb[sl_b["sero"]] = 0.0       # sero pres den take
     ub = np.full(p, np.inf)
 
     n_hp = len(heating.PARAM_NAMES)

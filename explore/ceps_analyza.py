@@ -121,6 +121,8 @@ if METEO_FC:
     dfc_pred = dfc.copy()
     for c in ("temp", "sun", "wind"):
         dfc_pred.loc[fc.index, c] = fc[c].to_numpy()
+    import sun
+    dfc_pred["sero"] = sun.gloom(dfc_pred["tma"], dfc_pred["sun"])
     print("   model CR pro prekvapeni CEPS: predpoved pocasi od", until)
 cz_model = pd.Series(validate.predict(dfc_pred, pre_c), index=dfc.index)
 da = ent["da"].reindex(bt.index.floor("h")).to_numpy()

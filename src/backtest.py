@@ -32,6 +32,7 @@ import etl
 import fit
 import heating
 import pv
+import sun
 import validate
 
 ISSUE_HOUR = 10   # vydani predikce v D [h, mistni cas]
@@ -170,6 +171,13 @@ def forecast_day(df: pd.DataFrame, day: pd.Timestamp, shape: tuple,
         fc = meteo.reindex(recent.index[fut])
         for c in ("temp", "sun", "wind"):
             recent.loc[fut, c] = fc[c].fillna(recent.loc[fut, c]).to_numpy()
+        # sero pres den zavisi na osvitu -> z predpovedi; je nelinearni, proto
+        # stredni hodnota pres rozdeleni jasnosti (sero_den), ne sero stredniho osvitu
+        if "sero_den" in fc:
+            g = (1.0 - recent.loc[fut, "tma"]) * fc["sero_den"].to_numpy()
+            recent.loc[fut, "sero"] = g.fillna(recent.loc[fut, "sero"]).to_numpy()
+        else:
+            recent["sero"] = sun.gloom(recent["tma"], recent["sun"])
     sel = (pd.to_datetime(recent["date_local"]) == target).to_numpy()
     comp = components(recent, params)[sel]
     comp.insert(0, "skutecnost", recent["baseload"][sel])

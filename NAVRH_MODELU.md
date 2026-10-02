@@ -433,3 +433,25 @@ Výhrada: kroky 8–23 se ladily a hodnotily na stejném roce backtestu (8/2025 
 - **Stav ústředního topení podle pravidla vyhlášky** (zahájení při denním průměru < 13 °C dva dny po sobě, přerušení při > 13 °C dva dny po sobě): chladné dny ve stavu „neběží“ (56 dní, hlavně září, začátek října, květen) mají reziduum −2,0 ± 1,4; pracovní dny celkově 0, volné dny −6,4 ± 2,6, podzimní pracovní doba −5,2 ± 2,5 (n = 14).
 - **Závěr: samostatný člen nezavádět.** Většinu zpoždění už nese pomalý kanál teplotního filtru (váha 64 %, τ ≈ 82 h); zbytek je ~5 jednotek ve ~12 dnech ročně — na ročním RMSE pod 0,01 — a z tak mála událostí by se člen odhadoval hůř, než kolik by přinesl. Část chytá korekce z ranní chyby dne vydání (x2). Vrátit se, až bude událostí víc, nebo pokud by se dal použít skutečný údaj o zahájení topné sezóny.
 - Vedlejší nález: 24. 9. 2025 (nejhorší den backtestu, −32) není zatopení — spotřeba je o 35–40 níž rovnoměrně od 1 h do 16 h včetně noci (jednorázová událost v portfoliu nebo v datech); následující den naopak +25 až +40 v pracovní době.
+
+### 2026-10-02 — šero přes den: spotřeba při tmavé obloze (krok 26)
+
+**Diagnostika polední chyby** (rezidua plného fitu, 9–15 h, mimo Vánoce): reziduum závisí na osvitu nelineárně — při osvitu pod ~10 W/m² za dne +7 až +14, mezi 100 a 400 W/m² záporné (zima −10 až −12, přechod −3, léto −1), nad 400 opět kladné. V zimě koreluje polední reziduum s jasností oblohy −0,55, v létě 0. Rozdíl „tmavá minus světlá čtvrthodina“ je +6 až +12 v 8–17 h, **v pracovní i volné dny a ve všech sezónách**; největší kolem poledne.
+
+**Zamítnutá hypotéza — sklon panelů FVE**: model násobí kapacitu osvitem na vodorovnou plochu, skloněné panely při nízkém zimním slunci dostávají víc. Přepočet osvitu do roviny panelů (rozklad na přímou a difuzní složku podle Erbse, sklon 20/35/50° k jihu) in-sample nepomohl (hodinový fit 12,62 → 12,60 až 12,66, zimní korelace s jasností −0,50 až −0,53); teplota článku místo teploty vzduchu 12,62 → 12,59. Do modelu nezavedeno.
+
+**Člen „šero přes den“ v bázi** (`src/sun.py`, `src/base.py`, `src/etl.py`): `šero(t) = (1 − tma) · exp(−osvit / I0)`, `I0 = 40 W/m²`; příspěvek = šero × aktivita(čas dne), aktivita z kubických B-splin v 5–21 h (6 parametrů), ≥ 0, společná pro všechny typy dnů. Nejpravděpodobnější výklad je svícení přes den při těžké oblačnosti a mlze (přímo neověřeno — může v tom být i část solárních zisků, které lineární člen v topení nevystihne). Na rozdíl od osvětlení za tmy závisí na počasí; ETL ho počítá jako sloupec `sero`.
+- Hledání I0 (hodinový fit celého řetězce): bez členu 12,62; I0 = 15 / 40 / 80 / 150 → 12,20 / 12,22 / 12,27 / 12,36. Zvoleno 40 (plošší, méně citlivé na chybu předpovědi).
+- Při plném šeru je spotřeba vyšší o ~4 v 6 h, ~19 v 10 h, **~30–33 ve 12–14 h**, ~21 v 16 h, ~6 ve 20 h. Zimní poledne RMSE 15,8 → 13,7, korelace rezidua s jasností −0,55 → −0,32.
+- **Solární koeficient topení a klesl z 0,021 na 0,0135 °C/(W/m²)** — část efektu tmavé oblohy dřív neslo topení jako „chybějící solární zisky“.
+
+| backtest | RMSE | MAPE | + korekce | + korekce MAPE |
+|---|---|---|---|---|
+| v8 (po opravě korekce) | 14,30 | 1,66 % | 12,84 | 1,473 % |
+| **v9 šero přes den** | **13,85** | **1,63 %** | **12,42** | **1,438 %** |
+
+**Předpověď počasí a nelineární člen** (`src/meteo_forecast.py`, `src/backtest.py`): šero spočítané ze *středního* předpovězeného osvitu realistický backtest nezlepšilo (s korekcí 17,94 → 17,99, model sám 19,42 → 19,93) — předpověď z oblačnosti dává střední osvit a šero středního osvitu není střední šero, tmavé dny se tak nikdy nepředpoví. Proto se pro každý bin oblačnosti kalibrují i **kvantily** poměru jasnosti a šero se v predikci počítá jako průměr přes ně (střední hodnota nelineárního členu přes rozdělení chyby předpovědi): s korekcí 17,94 → **17,77**, MAPE 2,006 → **1,992 %**. Volba `--sero=stredni-osvit` vrací původní výpočet.
+
+Očištěná spotřeba: šero je součástí báze, při přepočtu na normálové počasí zůstává skutečné (rozdíl proti normálu je v ročním průměru malý).
+
+Plný fit na 15min datech (uložené parametry, `models/*_joint.npz`): RMSE 13,08 → **12,71**; T_b 16,8 °C, s 2,0, τ 82 h beze změny.

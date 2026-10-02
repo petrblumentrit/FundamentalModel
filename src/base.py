@@ -24,6 +24,11 @@ nepusobi topeni ani chlazeni):
   kubicke B-spliny jen v oknech usvitu a soumraku, na okrajich oken plynule
   nulove: mimo okna je tma po cely rok stejna (poledne vzdy svetlo, pozdni
   noc vzdy tma) a clen by tam splyval s profilem.
+- sero pres den: sero(t) * aktivita(cas dne) — pri tmave obloze za dne
+  (tezka oblacnost, mlha; osvit pod ~100 W/m2) je spotreba vyssi nez za
+  jasneho dne se stejnou teplotou, v pracovni i volne dny (sviti se i pres
+  den). sero = (1 - tma) * exp(-osvit / I0) (src/sun.py), aktivita kubicke
+  B-spliny pres den, >= 0. Na rozdil od osvetleni za tmy zavisi na pocasi.
 - most: celodenni aditivni posun (konstanta + K_MOST harmonickych) — mosty
   jsou typovane jako patek, ale byvaji o 20-40 nize (vybirane dovolene);
   zvlast jednodenni a dvoudenni mosty (dvoudenni byvaji slabsi), mimo
@@ -58,6 +63,8 @@ K_MOST = 2                 # harmonickych v korekci mostu
 LIGHT_WINDOWS = ((3.0, 8.5), (15.0, 23.0))
 LIGHT_KNOT = 1.0           # [h] rozestup uzlu aktivity osvetleni
 LIGHT_RIDGE = 1.0          # ridge osvetleni ve fitu z mirnych dnu (relativne)
+GLOOM_WINDOW = (5.0, 21.0) # [h] okno clenu sera pres den (mistni cas)
+GLOOM_KNOT = 2.0           # [h] rozestup uzlu aktivity pri seru
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 
@@ -111,6 +118,13 @@ def _light_basis(tod: np.ndarray) -> np.ndarray:
 N_LIGHT = sum(len(_window_knots(a, b, LIGHT_KNOT)) - 2 for a, b in LIGHT_WINDOWS)
 
 
+def _gloom_basis(tod: np.ndarray) -> np.ndarray:
+    return _window_basis(tod, *GLOOM_WINDOW, GLOOM_KNOT)
+
+
+N_GLOOM = len(_window_knots(*GLOOM_WINDOW, GLOOM_KNOT)) - 2
+
+
 def _n_spline(span_days: float) -> int:
     return len(np.arange(0.0, span_days + KNOT_DAYS, KNOT_DAYS)) + 2
 
@@ -128,6 +142,7 @@ def _slices(span_days: float) -> dict:
     out["most"] = slice(i, i + 1 + 2 * K_MOST); i += 1 + 2 * K_MOST
     out["most2"] = slice(i, i + 1 + 2 * K_MOST); i += 1 + 2 * K_MOST
     out["svetlo"] = slice(i, i + N_LIGHT); i += N_LIGHT
+    out["sero"] = slice(i, i + N_GLOOM); i += N_GLOOM
     for name, k in kalendar.period_groups():
         out["obd_" + name] = slice(i, i + 1 + 2 * k); i += 1 + 2 * k
     out["total"] = i
@@ -169,6 +184,7 @@ def design(df: pd.DataFrame, t0, span_days: float) -> np.ndarray:
         mo = (most & ~in_period & (df["most_delka"].to_numpy() == n_run)).astype(float)[:, None]
         blocks.append(np.hstack([mo, fsub(K_MOST) * mo]))
     blocks.append(_light_basis(tod) * df["tma"].to_numpy()[:, None])
+    blocks.append(_gloom_basis(tod) * df["sero"].to_numpy()[:, None])
     for name, k in groups:
         g = df["obd_" + name].to_numpy(float)[:, None]
         blocks.append(np.hstack([g, fsub(k) * g]) if k else g)
@@ -222,6 +238,9 @@ def fit(df: pd.DataFrame, smooth: float = SMOOTH) -> dict:
     # osvetleni tu stahnout k nule, plne ho odhadne az joint fit
     sl_l = sl["svetlo"]
     P[sl_l, sl_l] += LIGHT_RIDGE * np.trace(XtX) / p * np.eye(sl_l.stop - sl_l.start)
+    # sero se z mirnych dnu (malo tmavych dni) odhaduje spatne — stejne ukotveni
+    sl_g = sl["sero"]
+    P[sl_g, sl_g] += LIGHT_RIDGE * np.trace(XtX) / p * np.eye(sl_g.stop - sl_g.start)
     coef = np.linalg.solve(XtX + P, X.T @ y)
     resid = y - X @ coef
     return {
@@ -280,6 +299,13 @@ def light_curve(params: dict, tod: np.ndarray | None = None) -> np.ndarray:
     if tod is None:
         tod = np.arange(0, 24, 0.25)
     return _light_basis(tod) @ params["coef"][_slices(params["span_days"])["svetlo"]]
+
+
+def gloom_curve(params: dict, tod: np.ndarray | None = None) -> np.ndarray:
+    """Spotreba navic pri plnem seru (nulovy osvit za dne) podle casu dne."""
+    if tod is None:
+        tod = np.arange(0, 24, 0.25)
+    return _gloom_basis(tod) @ params["coef"][_slices(params["span_days"])["sero"]]
 
 
 def save(params: dict, path: Path | None = None) -> Path:

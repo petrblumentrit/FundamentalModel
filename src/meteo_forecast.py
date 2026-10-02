@@ -14,6 +14,12 @@ jasne oblohy (Haurwitz, z vysky slunce) x pomer jasnosti kt(oblacnost).
 kt se kalibruje empiricky z historie (do `until`), protoze vzorec
 Kasten-Czeplak vztah u stredni oblacnosti nezachyti (merena stanice: jasno
 kt ~0,64, zatazeno ~0,15).
+
+Sero pres den (clen baze, src/sun.py) je nelinearni funkce osvitu: predpoved
+dava jen stredni osvit pri dane oblacnosti, a sero stredniho osvitu neni
+stredni sero (tmave dny by se nikdy nepredpovedely). Proto se pro kazdy bin
+oblacnosti kalibruji i **kvantily** kt a sero se pocita jako prumer pres ne —
+stredni hodnota nelinearniho clenu pres rozdeleni chyby predpovedi.
 """
 from pathlib import Path
 
@@ -25,6 +31,7 @@ from etl import TZ
 
 FILE = Path(__file__).resolve().parent.parent / "Analyza" / "ArchivMeteo.xlsx"
 KT_BINS = np.arange(0, 101, 10)        # hrany binu oblacnosti [%]
+KT_QUANTILES = np.arange(0.05, 1.0, 0.1)   # kvantily kt v binu (stredy decilu)
 
 
 def load_archive() -> pd.DataFrame:
@@ -46,21 +53,38 @@ def clear_sky(index_utc: pd.DatetimeIndex) -> np.ndarray:
     return np.where(cz > 0.01, 1098 * cz * np.exp(-0.057 / np.maximum(cz, 0.01)), 0.0)
 
 
-def calibrate(arch: pd.DataFrame, actual: pd.DataFrame, until: pd.Timestamp) -> np.ndarray:
-    """kt v binech oblacnosti z hodin pred `until` (bez uniku z budoucnosti)."""
+def _history(arch: pd.DataFrame, actual: pd.DataFrame, until: pd.Timestamp) -> tuple[pd.DataFrame, np.ndarray]:
+    """Hodiny pred `until` se sluncem nad obzorem a jejich bin oblacnosti."""
     act = actual["sun"].groupby(actual.index.floor("h")).mean()
     j = arch[["obl"]].join(act, how="inner")
     j = j[j.index < until]
     j["cs"] = clear_sky(j.index + pd.Timedelta(minutes=30))
     j = j[j.cs > 50]
-    b = np.clip(np.digitize(j.obl, KT_BINS[1:-1]), 0, len(KT_BINS) - 2)
+    return j, np.clip(np.digitize(j.obl, KT_BINS[1:-1]), 0, len(KT_BINS) - 2)
+
+
+def calibrate(arch: pd.DataFrame, actual: pd.DataFrame, until: pd.Timestamp) -> np.ndarray:
+    """kt v binech oblacnosti z hodin pred `until` (bez uniku z budoucnosti)."""
+    j, b = _history(arch, actual, until)
     # pomer souctu (vahy podle osvitu za jasne oblohy), ne prumer pomeru
     return np.array([j.sun[b == k].sum() / j.cs[b == k].sum() for k in range(len(KT_BINS) - 1)])
 
 
-def to_15min(arch: pd.DataFrame, index_15: pd.DatetimeIndex, kt: np.ndarray) -> pd.DataFrame:
+def calibrate_quantiles(arch: pd.DataFrame, actual: pd.DataFrame, until: pd.Timestamp) -> np.ndarray:
+    """Kvantily kt v binech oblacnosti (bin x kvantil) — rozdeleni skutecne
+    jasnosti pri dane predpovedi oblacnosti."""
+    j, b = _history(arch, actual, until)
+    ratio = (j.sun / j.cs).to_numpy()
+    return np.array([np.quantile(ratio[b == k], KT_QUANTILES) for k in range(len(KT_BINS) - 1)])
+
+
+def to_15min(arch: pd.DataFrame, index_15: pd.DatetimeIndex, kt: np.ndarray,
+             kt_q: np.ndarray | None = None) -> pd.DataFrame:
     """Predpoved na 15min ose: teplota, vitr a oblacnost linearne mezi stredy
-    hodin, osvit = jasna obloha (stred intervalu) x kt(oblacnost)."""
+    hodin, osvit = jasna obloha (stred intervalu) x kt(oblacnost).
+
+    S kt_q (calibrate_quantiles) navic sloupec `sero_den` = stredni hodnota
+    exp(-osvit / I0) pres rozdeleni kt pri dane oblacnosti (bez faktoru tmy)."""
     mid_h = arch.index + pd.Timedelta(minutes=30)
     mid_q = index_15 + pd.Timedelta(minutes=7.5)
     x, xq = mid_h.asi8.astype(float), mid_q.asi8.astype(float)
@@ -68,5 +92,10 @@ def to_15min(arch: pd.DataFrame, index_15: pd.DatetimeIndex, kt: np.ndarray) -> 
     for c in ("temp", "wind", "obl"):
         out[c] = np.interp(xq, x, arch[c].to_numpy())
     centers = (KT_BINS[:-1] + KT_BINS[1:]) / 2
-    out["sun"] = clear_sky(mid_q) * np.interp(out["obl"].to_numpy(), centers, kt)
+    cs = clear_sky(mid_q)
+    out["sun"] = cs * np.interp(out["obl"].to_numpy(), centers, kt)
+    if kt_q is not None:
+        obl = out["obl"].to_numpy()
+        out["sero_den"] = np.mean([np.exp(-cs * np.interp(obl, centers, kt_q[:, q]) / sun.GLOOM_I0)
+                                   for q in range(kt_q.shape[1])], axis=0)
     return out

@@ -34,7 +34,7 @@ def hourly(df: pd.DataFrame) -> pd.DataFrame:
     """Hodinova agregace vystupu load(): spojite veliciny prumerem (spotreba,
     meteo, tma), kalendarni sloupce prvni hodnotou. Pro fit tvaru (nelinearni
     parametry nepotrebuji ctvrthodinove rozliseni, 4x mene radku)."""
-    num = [c for c in ("baseload", "sun", "wind", "temp", "tma") if c in df.columns]
+    num = [c for c in ("baseload", "sun", "wind", "temp", "tma", "sero") if c in df.columns]
     g = df.groupby(df.index.floor("h"))
     out = g[[c for c in df.columns if c not in num]].first()
     out[num] = g[num].mean()
@@ -117,6 +117,8 @@ def _load(with_local_time: bool) -> pd.DataFrame:
         # tma (astronomicka, deterministicka) pro clen osvetleni
         import sun
         df["tma"] = sun.darkness_15min(df.index)
+        # sero pres den (tmava obloha za dne) pro clen denniho sviceni
+        df["sero"] = sun.gloom(df["tma"], df["sun"])
     return df
 
 

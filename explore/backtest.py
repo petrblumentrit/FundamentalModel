@@ -94,8 +94,9 @@ def _forecast_meteo(df, until):
     import meteo_forecast as mf
     arch = mf.load_archive()
     kt = mf.calibrate(arch, df, until)
+    kt_q = None if "--sero=stredni-osvit" in sys.argv else mf.calibrate_quantiles(arch, df, until)
     idx = df.index[(df.index >= arch.index.min()) & (df.index <= arch.index.max())]
-    return mf.to_15min(arch, idx, kt)
+    return mf.to_15min(arch, idx, kt, kt_q)
 
 
 def _shape(args):
