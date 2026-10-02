@@ -455,3 +455,24 @@ Výhrada: kroky 8–23 se ladily a hodnotily na stejném roce backtestu (8/2025 
 Očištěná spotřeba: šero je součástí báze, při přepočtu na normálové počasí zůstává skutečné (rozdíl proti normálu je v ročním průměru malý).
 
 Plný fit na 15min datech (uložené parametry, `models/*_joint.npz`): RMSE 13,08 → **12,71**; T_b 16,8 °C, s 2,0, τ 82 h beze změny.
+
+### 2026-10-02 — kalibrace předpovědi počasí: osvit podle výšky slunce, bias teploty a větru (krok 27)
+
+**Chyby předpovědi z archivu proti stanici** (období před backtestem i v něm):
+- **Osvit z oblačnosti měl špatný denní i roční chod**: poměr jasnosti kt závisel jen na oblačnosti, ale při stejné oblačnosti silně roste s výškou slunce (zataženo: 0,01 u obzoru → 0,43 v létě v poledne; jasno 0,05 → 0,78). Léto: ráno +50 až +70 W/m², v poledne −70 až −100; zima: v průměru dvojnásobek skutečnosti (+14 při průměru 12–33 W/m²).
+- **Teplota**: předpověď je teplejší než stanice, hlavně v létě odpoledne a v noci (+1 až +1,7 °C, každý rok), přes den málo; denní chyba je setrvačná (autokorelace 0,59 / 0,41 / 0,36 pro 1 / 2 / 3 dny).
+- **Vítr**: předpověď o ~1,7 m/s vyšší než stanice — model to čte jako chladnější pocitovou teplotu (topení v lednu +5,9, rovnoměrně přes den).
+
+**Úpravy** (`src/meteo_forecast.py`, `src/backtest.py`; vše jen z dat známých při vydání):
+- kt v buňkách **oblačnost × sin(výšky slunce)** (10 × 7, bilineární interpolace, řídké buňky doplněné ze sousedních oblačností), stejně i kvantily pro šero. Bias osvitu: léto v poledne −98 → −11 W/m², zima +14 → +0,5; korelace předpovězeného a skutečného šera 0,84 → 0,90.
+- **Klouzavé odstranění biasu** teploty a větru (`meteo_forecast.debias`): průměr (předpověď − skutečnost) po hodinách dne za posledních 30 dní před cutoffem. Chyba předpovědi teploty RMSE 1,57 → 1,37 °C (okna 7 / 14 / 30 / 60 dní: 1,44 / 1,39 / 1,37 / 1,40), bias +0,55 → 0. Volba `--bias=temp,wind` (výchozí), `--bias=` vypne.
+
+| realistický backtest (předpověď počasí) | RMSE | MAPE | + korekce | + korekce MAPE |
+|---|---|---|---|---|
+| v9 (šero, kvantily) | 19,43 | 2,18 % | 17,77 | 1,992 % |
+| + osvit podle výšky slunce, bias teploty | 18,32 | 2,05 % | 17,31 | 1,911 % |
+| **+ bias větru** | **18,27** | **2,04 %** | **17,25** | **1,909 %** |
+
+Po měsících (model): červenec 22,0 → 18,2, srpen 21,2 → 16,1, květen 17,6 → 14,2; bias červenec −10,7 → −3,5, srpen −12,0 → −2,7. Samotný osvit s teplotou zhoršil leden a únor (bias −3,6 → −8,6): nadhodnocený zimní osvit dřív náhodou kompenzoval nadhodnocený vítr; s opravou větru je zimní bias stejný jako se skutečným počasím (leden −3,8 vs −3,7). Červen se zhoršil (14,3 → 17,3) — bias +8 odpovídá běhu se skutečným počasím (+5,6), dřív ho kryla chyba předpovědi.
+
+Rozdíl proti běhu se skutečným počasím (12,42) zůstává 4,8 RMSE: po složkách topení 7,1, chlazení 4,8, FVE 4,7, báze (šero) 3,2 (v zimě v poledne šero z předpovědi v průměru o 3–4 jednotky nižší než skutečné) — převážně náhodná chyba předpovědi, kterou kalibrace neodstraní; další zlepšení už jen lepším vstupem (osvit přímo z numerického modelu, víc zdrojů předpovědi).

@@ -32,7 +32,12 @@ PRIOR = None
 # --meteo=predpoved: na zbytek dne D a D+1 predpoved pocasi z archivu
 # (Analyza/ArchivMeteo.xlsx) misto namerenych hodnot — realisticky rezim
 METEO = None
+# --bias=temp,wind: ktere veliciny predpovedi zbavit klouzaveho biasu
+# (vychozi backtest.DEBIAS; --bias= vypne)
+BIAS = None
 for _a in sys.argv:
+    if _a.startswith("--bias="):
+        BIAS = tuple(x for x in _a.split("=", 1)[1].split(",") if x)
     if _a.startswith("--out="):
         OUT = ROOT / _a.split("=", 1)[1]
     if _a.startswith("--okno="):
@@ -84,6 +89,9 @@ def _init(prior=None, meteo_until=None):
     import fit
     if prior is not None:
         fit.PRIOR_WEIGHT = prior
+    if BIAS is not None:
+        import backtest
+        backtest.DEBIAS = BIAS
     _df = etl.load()
     if meteo_until is not None:
         _fc = _forecast_meteo(_df, meteo_until)

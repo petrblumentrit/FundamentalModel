@@ -31,6 +31,7 @@ import cooling
 import etl
 import fit
 import heating
+import meteo_forecast
 import pv
 import sun
 import validate
@@ -40,6 +41,7 @@ CUTOFF_HOUR = 9   # konec dostupnych dat v D (H-1)
 SHAPE_REFIT_DOW = 0   # den vydani s plnym (nelinearnim) prefitem, 0 = pondeli
 HOLIDAY_CONTEXT = 3   # [dny] okoli svatku, ktere se pri omezenem okne bere cele
 PREDICT_HISTORY = 60  # [dny] historie pro vypocet slozek predikce D+1
+DEBIAS = ("temp", "wind")   # klouzave odstraneni biasu predpovedi (meteo_forecast.debias); () = vypnuto
 
 
 def _wall(day: pd.Timestamp, hour: int) -> pd.Timestamp:
@@ -169,6 +171,9 @@ def forecast_day(df: pd.DataFrame, day: pd.Timestamp, shape: tuple,
         recent = recent.copy()
         fut = recent.index >= cutoff(day).tz_convert("UTC")
         fc = meteo.reindex(recent.index[fut])
+        if DEBIAS:
+            adj = meteo_forecast.debias(meteo, df, cutoff(day).tz_convert("UTC"), DEBIAS).reindex(fc.index)
+            fc[list(DEBIAS)] = adj[list(DEBIAS)]
         for c in ("temp", "sun", "wind"):
             recent.loc[fut, c] = fc[c].fillna(recent.loc[fut, c]).to_numpy()
         # sero pres den zavisi na osvitu -> z predpovedi; je nelinearni, proto
