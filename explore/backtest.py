@@ -35,7 +35,13 @@ METEO = None
 # --bias=temp,wind: ktere veliciny predpovedi zbavit klouzaveho biasu
 # (vychozi backtest.DEBIAS; --bias= vypne)
 BIAS = None
+# --trenink=predpoved | predpoved-bias: experiment — model se UCI na predpovezenem
+# pocasi (cela historie archivu misto namerenych hodnot; -bias = predpoved
+# zbavena klouzaveho biasu), predikce ze stejne predpovedi
+TRAIN = None
 for _a in sys.argv:
+    if _a.startswith("--trenink="):
+        TRAIN = _a.split("=", 1)[1]
     if _a.startswith("--bias="):
         BIAS = tuple(x for x in _a.split("=", 1)[1].split(",") if x)
     if _a.startswith("--out="):
@@ -93,7 +99,9 @@ def _init(prior=None, meteo_until=None):
         import backtest
         backtest.DEBIAS = BIAS
     _df = etl.load()
-    if meteo_until is not None:
+    if TRAIN:
+        _df = _train_on_forecast(_df, meteo_until)
+    elif meteo_until is not None:
         _fc = _forecast_meteo(_df, meteo_until)
 
 
@@ -105,6 +113,19 @@ def _forecast_meteo(df, until):
     kt_q = None if "--sero=stredni-osvit" in sys.argv else mf.calibrate_quantiles(arch, df, until)
     idx = df.index[(df.index >= arch.index.min()) & (df.index <= arch.index.max())]
     return mf.to_15min(arch, idx, kt, kt_q)
+
+
+def _train_on_forecast(df, until):
+    """Data s pocasim nahrazenym predpovedi z archivu (kde je k dispozici)."""
+    import meteo_forecast as mf
+    fc = _forecast_meteo(df, until)
+    if TRAIN == "predpoved-bias":
+        fc[list(mf.BIAS_COLS)] = mf.debias_history(fc, df)
+    out = df.copy()
+    for c in ("temp", "sun", "wind"):
+        out.loc[fc.index, c] = fc[c].to_numpy()
+    out.loc[fc.index, "sero"] = ((1.0 - out.loc[fc.index, "tma"]) * fc["sero_den"].to_numpy()).to_numpy()
+    return out
 
 
 def _shape(args):
@@ -157,6 +178,9 @@ def simulate():
         fit.PRIOR_WEIGHT = PRIOR
         print(f"vaha prioru: {PRIOR}", flush=True)
     sdays = backtest.shape_days(issue_days)
+    if TRAIN:
+        df = _train_on_forecast(df, backtest.cutoff(sdays[0]).tz_convert("UTC"))
+        print(f"trenink na predpovezenem pocasi ({TRAIN})", flush=True)
     t = time.time()
     # faze 0 v hlavnim procesu — je seriova, tady ma BLAS vsechna jadra
     p0 = backtest.shape_fit(df, sdays[0], None, WINDOW)
@@ -166,7 +190,7 @@ def simulate():
     nw = n_workers()
     print(f"workeru: {nw} (volna pamet {_free_gb():.1f} GB)", flush=True)
     meteo_until = None
-    if METEO == "predpoved":
+    if METEO == "predpoved" or TRAIN:
         meteo_until = backtest.cutoff(sdays[0]).tz_convert("UTC")
         print(f"meteo: predpoved z archivu, kalibrace osvitu do {meteo_until}", flush=True)
     with ProcessPoolExecutor(nw, initializer=_init, initargs=(PRIOR, meteo_until)) as ex:

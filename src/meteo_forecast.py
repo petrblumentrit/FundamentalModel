@@ -152,6 +152,25 @@ def to_15min(arch: pd.DataFrame, index_15: pd.DatetimeIndex, kt: np.ndarray,
     return out
 
 
+def debias_history(fc: pd.DataFrame, actual: pd.DataFrame,
+                   cols: tuple[str, ...] = BIAS_COLS) -> pd.DataFrame:
+    """Cela historie predpovedi zbavena klouzaveho biasu — pro kazdy den bias z
+    BIAS_DAYS dni koncicich predvcerejskem (zname pri vydani predchozi den).
+    Pro uceni modelu na predpovezenem pocasi (backtest --trenink=predpoved-bias)."""
+    loc = fc.index.tz_convert(TZ)
+    day, hour = pd.DatetimeIndex(loc.date), loc.hour
+    out = pd.DataFrame(index=fc.index)
+    for c in cols:
+        err = (fc[c] - actual[c].reindex(fc.index)).to_numpy()
+        tab = pd.Series(err).groupby([day, hour]).mean().unstack()
+        bias = tab.rolling(BIAS_DAYS, min_periods=7).mean().shift(2).fillna(0.0)
+        b = bias.stack().reindex(pd.MultiIndex.from_arrays([day, hour])).to_numpy()
+        out[c] = fc[c].to_numpy() - np.nan_to_num(b)
+    if "wind" in out:
+        out["wind"] = out["wind"].clip(lower=0.0)
+    return out
+
+
 def debias(fc: pd.DataFrame, actual: pd.DataFrame, cutoff: pd.Timestamp,
            cols: tuple[str, ...] = BIAS_COLS) -> pd.DataFrame:
     """Predpoved teploty a vetru od `cutoff` dal zbavena klouzaveho biasu.

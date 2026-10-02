@@ -512,3 +512,33 @@ Plný fit na 15min datech: RMSE 12,71 → **12,26**.
 Léto 2026 se v backtestu předpovídá z průběhu naučeného na létech 2022–2025: s korekcí červen 11,1 → 10,0, červenec 12,8 → 11,3, srpen 12,3 → 10,8; ostatní měsíce beze změny (září 11,6 → 12,1). Hodinový fit celého řetězce 11,77 → 11,35.
 
 Plný fit na 15min datech: RMSE 12,26 → **11,87**.
+
+### 2026-10-02 — učit model na naměřeném, nebo na předpovězeném počasí? (krok 30)
+
+**Otázka** (uživatel): je běžné ladit model na ideálních datech, nebo se modely ladí i na nepřesné předpovědi počasí z archivu? Obojí se používá. Fyzikální a strukturální modely se odhadují na naměřeném počasí (parametry mají fyzikální význam, očištěná spotřeba je platná) a předpověď do nich vstupuje až při predikci; čistě statistické modely a strojové učení se často učí rovnou na archivu předpovědí — model se pak sám naučí nedůvěřovat nespolehlivým vstupům, ale jeho citlivosti jsou tlumené (chyba v regresoru stahuje odhad sklonu k nule), přestávají být fyzikální a platí jen pro daného dodavatele a verzi předpovědi.
+
+**Experiment** (`explore/backtest.py --trenink=predpoved-bias`): celá historie od začátku archivu (8/2022) má místo naměřené teploty, osvitu a větru předpověď zbavenou klouzavého biasu (`meteo_forecast.debias_history`), šero jako střední hodnotu přes kvantily jasnosti; predikce ze stejné předpovědi.
+
+| realistický backtest | RMSE | MAPE | + korekce | + korekce MAPE |
+|---|---|---|---|---|
+| **učení na naměřeném počasí** (v11) | **17,71** | **1,96 %** | **16,72** | **1,831 %** |
+| učení na předpovězeném počasí | 18,97 | 2,15 % | 17,44 | 1,934 % |
+
+Učení na předpovědi je **horší** (chyba tréninku 15,3 proti 11,9; fity tvaru několikanásobně pomalejší, backtest 18 min místo 6). Dva důvody: (1) šum v regresorech rozmaže odhad všech složek, i těch, které s počasím nesouvisejí; (2) setrvačnostní filtr (τ ≈ 80 h, váha pomalého kanálu ~65 %) pak i pro minulé dny počítá s předpovědí, ačkoli je při vydání skutečné počasí do D 09:00 známé — v provozu se tak zahazuje informace.
+
+**Závěr — zvolený postup** (hybrid): model se učí na naměřeném počasí; předpověď se před vstupem do modelu **kalibruje proti stanici** (krok 27: osvit podle oblačnosti a výšky slunce, klouzavý bias teploty a větru) a **nelineární členy se v predikci počítají jako střední hodnota přes rozdělení chyby předpovědi** (krok 26: šero přes kvantily jasnosti). Zbylou setrvačnou chybu bere korekční vrstva. Realistický backtest se pak používá k *hodnocení* a k ladění kalibrační vrstvy, ne k odhadu fyzikálních parametrů.
+
+**Souhrn dne** (backtest posledního roku; „realisticky“ = s archivem předpovědí počasí):
+
+| verze | model RMSE / MAPE | + korekce | realisticky + korekce |
+|---|---|---|---|
+| v8 (krok 23) | 14,30 / 1,66 % | 12,93 / 1,482 % | 18,01 / 2,007 % |
+| 24 oprava korekce | 14,30 / 1,66 % | 12,84 / 1,473 % | 17,94 / 2,006 % |
+| 26 šero přes den | 13,85 / 1,63 % | 12,42 / 1,438 % | 17,77 / 1,992 % |
+| 27 kalibrace předpovědi počasí | – | – | 17,25 / 1,909 % |
+| 28 tvar topení/chlazení pro volné dny | 13,41 / 1,58 % | 11,94 / 1,381 % | 16,93 / 1,868 % |
+| **29 průběh léta** | **13,13 / 1,53 %** | **11,62 / 1,337 %** | **16,72 / 1,831 %** |
+
+Plný fit (in-sample, 15 min): 13,08 → 11,87. Výhrada trvá: všechny kroky se vybíraly podle stejného roku backtestu; kroky 26, 28 a 29 přidaly ~75 lineárních parametrů. Nezávislý test = data po 4. 8. 2026.
+
+**Další kroky:** bias po měsících (model bez korekce: leden–únor −4, březen–duben, červen, říjen–listopad +4 až +6; korekce bere zhruba polovinu) — pravidlo úrovně a trendu topení za cutoffem; neděle odpoledne v topné a chladicí sezóně (+7 až +16 ve 13–17 h); šero z předpovědi v zimě; Vánoce (další ročníky); validace mimo vzorek pro aktuální strukturu; lepší meteo vstup (osvit přímo z numerického modelu).

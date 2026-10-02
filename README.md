@@ -54,6 +54,17 @@ uv run python explore/svetlo_test.py      # 9    test spotreby rizene svetlem (z
 uv run python explore/zd_analyza.py       # 14   srovnani s domacnostmi PRE (data OTE v Analyza/)
 uv run python explore/vanoce_analyza.py   # 17   Vanoce 2022-2025 (rezidua po dnech a skupinach)
 uv run python explore/ceps_analyza.py     # 19   zatizeni CR (CEPS/ENTSO-E) a predpoved CEPS
+uv run python explore/zatop_test.py       # 25   opozdene zatopeni po teplem obdobi (test na reziduich)
+```
+
+Volby backtestu: `--out=slozka`, `--meteo=predpoved` (realistický režim s
+archivem předpovědí počasí v `Analyza/ArchivMeteo.xlsx`), `--bias=temp,wind`
+(klouzavé odstranění biasu předpovědi; `--bias=` vypne), `--okno=dny`,
+`--prior=vaha`, `--workers=N`, `--trenink=predpoved-bias` (experiment: učení
+na předpovězeném počasí), `--plot-only`, `--no-open`.
+
+```bash
+uv run python explore/backtest.py --meteo=predpoved --out=simulace/predpoved_meteo
 ```
 
 Výsledky simulace predikce (CSV + offline interaktivní HTML graf) jdou do
@@ -71,15 +82,16 @@ Kalendář (svátky, mosty, prázdniny, vánoční skupiny dnů) se nastavuje v
 | modul | role |
 |---|---|
 | `src/etl.py` | načtení dat, časová osa, kalendář |
-| `src/base.py` | bazální složka: P-spline úroveň + Fourierovy profily |
-| `src/heating.py` | topení: softplus + COP + dvoukanálový setrvačnostní filtr |
-| `src/cooling.py` | chlazení: zrcadlový softplus + EER |
+| `src/base.py` | bazální složka: P-spline úroveň + Fourierovy profily, osvětlení za tmy, šero přes den, průběh léta, zvláštní období |
+| `src/heating.py` | topení: softplus + COP + dvoukanálový setrvačnostní filtr, vlastní denní tvar pro volné dny |
+| `src/cooling.py` | chlazení: zrcadlový softplus + EER, vlastní denní tvar pro volné dny |
 | `src/pv.py` | FVE: neklesající kapacita × osvit × teplotní derating |
 | `src/fit.py` | společné odhady přes moduly (sdílené regresory) a joint fit |
 | `src/normal.py` | klimatologie pro normálové podmínky |
 | `src/validate.py` | fit z části dat (maska řádků) pro validaci mimo vzorek |
 | `src/backtest.py` | simulace provozní predikce D+1 (denní přefit z dat do D 09:00) |
-| `src/sun.py` | poloha slunce a tma (astronomicky) pro člen osvětlení |
+| `src/sun.py` | poloha slunce, tma (astronomicky) pro člen osvětlení a šero přes den (z osvitu) |
+| `src/meteo_forecast.py` | archiv předpovědí počasí: osvit z oblačnosti a výšky slunce, kvantily jasnosti pro šero, klouzavý bias teploty a větru |
 | `src/ote.py` | načítání dat OTE (zbytkové diagramy, KZD, přepočtené TDD), ČEPS a ENTSO-E z `Analyza/` |
 | `src/kalendar.py` | kalendář z `config/kalendar.yaml`: svátky, mosty, prázdniny, zvláštní období (Vánoce) |
 | `src/correction.py` | korekce predikce D+1 z chyb dřívějších predikcí (online, reziduová vrstva) |
