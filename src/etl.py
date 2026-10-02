@@ -67,6 +67,51 @@ def load(with_local_time: bool = True) -> pd.DataFrame:
     return _load(False)
 
 
+def add_calendar(df: pd.DataFrame) -> pd.DataFrame:
+    """Doplni sloupce mistniho kalendare (typ dne, svatky, mosty, prazdniny,
+    zvlastni obdobi, tma) k ramci s UTC indexem — pro data i pro budouci osu
+    dlouhodobe predikce. Meni df na miste a vraci ho."""
+    loc = df.index.tz_convert(TZ)
+    df["date_local"] = loc.date
+    df["tod"] = loc.hour + loc.minute / 60  # cas dne [h]
+    df["dow"] = loc.dayofweek  # 0=Po
+    # typ dne = role v bloku volna podle toho, zda je volno dnes a zitra:
+    #   0 prace->prace (Po-Ct), 1 prace->volno (patek; i ctvrtek pred
+    #   patecnim svatkem, mosty), 2 volno->volno (sobota; i svatek pred
+    #   vikendem), 3 volno->prace (nedele; i Velikonocni pondeli).
+    # Svatky tak prebiraji profily naucene z ~240 vikendu misto nedele pro
+    # vsechny; pro bezne tydny se nic nemeni. Volno vcera nese ranni clen
+    # po volnu (po_volnu).
+    import kalendar
+    holidays = kalendar.holidays(loc.year.min() - 1, loc.year.max() + 1)
+    dates = pd.Series(loc.date, index=df.index)
+    days = pd.to_datetime(dates)
+    off = ((df["dow"] >= 5) | dates.isin(holidays)).to_numpy()
+    nxt = days + pd.Timedelta(days=1)
+    off_next = ((nxt.dt.dayofweek >= 5) | nxt.dt.date.isin(holidays)).to_numpy()
+    df["daytype"] = np.select([~off & ~off_next, ~off & off_next, off & off_next],
+                              [0, 1, 2], default=3)
+    # mosty: 1-2 pracovni dny sevrene volnem (config/kalendar.yaml)
+    runs = kalendar.bridge_runs(holidays)
+    df["most"] = dates.isin(set(runs)).to_numpy()
+    df["most_delka"] = dates.map(runs).fillna(0).astype(int).to_numpy()
+    # letni prazdniny (dominantni skolni volno)
+    df["prazdniny"] = kalendar.summer_holidays(dates)
+    # poradi dne v okne prubehu leta (config prazdniny.prubeh), mimo okno -1
+    df["leto_den"] = kalendar.summer_position(dates)
+    # zvlastni obdobi (Vanoce ...): priznak pro kazdou skupinu z configu
+    for name, flag in kalendar.period_flags(dates, holidays).items():
+        df["obd_" + name] = flag
+    # predchozi kalendarni den volny (vikend/svatek) — rezim noci se meni az
+    # behem rana, ne o pulnoci (pondelni noc je jeste vikendova)
+    prev = pd.Series(pd.to_datetime(dates) - pd.Timedelta(days=1), index=df.index)
+    df["po_volnu"] = ((prev.dt.dayofweek >= 5) | prev.dt.date.isin(holidays)).to_numpy()
+    # tma (astronomicka, deterministicka) pro clen osvetleni
+    import sun
+    df["tma"] = sun.darkness_15min(df.index)
+    return df
+
+
 def _load(with_local_time: bool) -> pd.DataFrame:
     bl = _read_csv(DATA_DIR / "baseload.csv").rename(columns={"baseline": "baseload"})
     mt = _read_csv(DATA_DIR / "Meteo15.csv")
@@ -81,44 +126,8 @@ def _load(with_local_time: bool) -> pd.DataFrame:
     mt = mt.reindex(full).interpolate(limit=4)
     df = bl.join(mt, how="inner").dropna()
     if with_local_time:
-        loc = df.index.tz_convert(TZ)
-        df["date_local"] = loc.date
-        df["tod"] = loc.hour + loc.minute / 60  # cas dne [h]
-        df["dow"] = loc.dayofweek  # 0=Po
-        # typ dne = role v bloku volna podle toho, zda je volno dnes a zitra:
-        #   0 prace->prace (Po-Ct), 1 prace->volno (patek; i ctvrtek pred
-        #   patecnim svatkem, mosty), 2 volno->volno (sobota; i svatek pred
-        #   vikendem), 3 volno->prace (nedele; i Velikonocni pondeli).
-        # Svatky tak prebiraji profily naucene z ~240 vikendu misto nedele pro
-        # vsechny; pro bezne tydny se nic nemeni. Volno vcera nese ranni clen
-        # po volnu (po_volnu).
-        import kalendar
-        holidays = kalendar.holidays(loc.year.min() - 1, loc.year.max() + 1)
-        dates = pd.Series(loc.date, index=df.index)
-        days = pd.to_datetime(dates)
-        off = ((df["dow"] >= 5) | dates.isin(holidays)).to_numpy()
-        nxt = days + pd.Timedelta(days=1)
-        off_next = ((nxt.dt.dayofweek >= 5) | nxt.dt.date.isin(holidays)).to_numpy()
-        df["daytype"] = np.select([~off & ~off_next, ~off & off_next, off & off_next],
-                                  [0, 1, 2], default=3)
-        # mosty: 1-2 pracovni dny sevrene volnem (config/kalendar.yaml)
-        runs = kalendar.bridge_runs(holidays)
-        df["most"] = dates.isin(set(runs)).to_numpy()
-        df["most_delka"] = dates.map(runs).fillna(0).astype(int).to_numpy()
-        # letni prazdniny (dominantni skolni volno)
-        df["prazdniny"] = kalendar.summer_holidays(dates)
-        # poradi dne v okne prubehu leta (config prazdniny.prubeh), mimo okno -1
-        df["leto_den"] = kalendar.summer_position(dates)
-        # zvlastni obdobi (Vanoce ...): priznak pro kazdou skupinu z configu
-        for name, flag in kalendar.period_flags(dates, holidays).items():
-            df["obd_" + name] = flag
-        # predchozi kalendarni den volny (vikend/svatek) — rezim noci se meni az
-        # behem rana, ne o pulnoci (pondelni noc je jeste vikendova)
-        prev = pd.Series(pd.to_datetime(dates) - pd.Timedelta(days=1), index=df.index)
-        df["po_volnu"] = ((prev.dt.dayofweek >= 5) | prev.dt.date.isin(holidays)).to_numpy()
-        # tma (astronomicka, deterministicka) pro clen osvetleni
+        add_calendar(df)
         import sun
-        df["tma"] = sun.darkness_15min(df.index)
         # sero pres den (tmava obloha za dne) pro clen denniho sviceni
         df["sero"] = sun.gloom(df["tma"], df["sun"])
     return df

@@ -9,3 +9,5 @@ models/validace.pkl
 simulace/
 # zbytkove diagramy distribuce (data, mimo repo)
 Analyza/
+# cache foldu dopredne validace dlouhodobe predikce
+models/dlouhodoba_validace.pkl

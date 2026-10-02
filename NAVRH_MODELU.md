@@ -542,3 +542,46 @@ Učení na předpovědi je **horší** (chyba tréninku 15,3 proti 11,9; fity tv
 Plný fit (in-sample, 15 min): 13,08 → 11,87. Výhrada trvá: všechny kroky se vybíraly podle stejného roku backtestu; kroky 26, 28 a 29 přidaly ~75 lineárních parametrů. Nezávislý test = data po 4. 8. 2026.
 
 **Další kroky:** bias po měsících (model bez korekce: leden–únor −4, březen–duben, červen, říjen–listopad +4 až +6; korekce bere zhruba polovinu) — pravidlo úrovně a trendu topení za cutoffem; neděle odpoledne v topné a chladicí sezóně (+7 až +16 ve 13–17 h); šero z předpovědi v zimě; Vánoce (další ročníky); validace mimo vzorek pro aktuální strukturu; lepší meteo vstup (osvit přímo z numerického modelu).
+
+### 2026-10-02 — dlouhodobá predikce: počasí za horizontem, pravidlo trendu, dopředná validace (krok 31)
+
+**Zadání** (uživatel): horizont aspoň rok dopředu. Předpověď počasí končí nejpozději po 10 dnech (archiv má zatím jen D+1), dál se dosazuje počasí přepínačem **normál / scénáře z historických let**; s normálem stačí čtvrthodinový profil, se scénáři profil a pásmo nejistoty; pomalé složky pokračují **posledním trendem**, změny portfolia se nemodelují.
+
+**Podklady** (současný fit, průměrná spotřeba ~650):
+- Normálová dráha podhodnocuje nelineární členy: povětrnostní část ročně −3,2 (chlazení −10 %, šero −33 %), po měsících září −9, duben −7, květen −6, srpen −5, leden +7; 99. percentil denního maxima povětrnostní části 198 místo 240.
+- Úroveň báze je čistý trend bez sezónnosti (odchylka měsíců od ročního průměru do ±1): 2022 → 2023 pokles o 14–28 (krize), od 2024 růst +8 až +10 za rok, naposledy +14. Topná citlivost +34 % za 4 zimy.
+- Počasí: roční průměr se mezi roky liší o ±1 až 2 jednotky, jednotlivé měsíce výrazně víc (směrodatná odchylka únor 22, duben 14, leden 11, léto 3–9).
+
+**Řešení** (`src/longterm.py`; `etl.add_calendar` — kalendář pro libovolnou budoucí osu, výstup ETL beze změny):
+- **Osa** = 60 dní skutečných dat před koncem (náběh setrvačnostních filtrů) + horizont; kalendářní a behaviorální část modelu je pro budoucí dny daná.
+- **Počasí `normal`**: průměr teploty, osvitu a větru podle dne v roce a času dne v UTC (sluneční čas), vyhlazený 15denním oknem; šero jako průměr skutečného šera (ne šero průměrného osvitu).
+- **Počasí `scenare`**: souvislé okno skutečného počasí posunuté o celé roky zpět (v UTC — poloha slunce sedí, dynamika a setrvačnost zůstávají reálné), každý rok i s posunem o ±7 a ±14 dní; teplota se přepočte o rozdíl normálu cílového a zdrojového dne. Predikce = průměr scénářů, pásmo = 10–90 % scénářů (při méně než 10 scénářích rozpětí) rozšířené kvadraticky o chybu modelu a trendu (`MODEL_SD` = 15, měsíční průměry 8).
+- **Historie počasí**: `Data/meteo_historie.csv` (stejný formát jako `Meteo15.csv`, libovolně dlouhá řada ze stejné stanice), jinak meteo z dat portfolia (4,5 roku → 18 scénářů pro predikci od 8/2026). Bere se jen historie před koncem tréninku.
+- **Trend `posledni`**: úroveň báze, přírůstek topné citlivosti (včetně denního tvaru) a kapacita FVE pokračují tempem posledních 365 dní; `drzet` = poslední hodnota; lze vybrat složky (`uroven`, `topeni`, `fve`) a tlumit (`posledni:0.5`).
+
+**Dopředná validace** (`explore/dlouhodoba_validace.py`): model odhadnutý jen z dat před 5. 8. daného roku (celý řetězec, hodinová agregace), predikce následujících 365 dní, hodinové hodnoty.
+
+Pravidlo trendu při skutečném počasí (RMSE / bias):
+
+| fold od | držet | poslední trend | jen úroveň | jen topení + FVE | poslední trend × 0,5 |
+|---|---|---|---|---|---|
+| 5. 8. 2023 | 17,3 / +10,8 | 24,0 / +19,1 | 23,7 / +18,7 | 17,1 / +11,2 | 20,2 / +14,9 |
+| 5. 8. 2024 | 14,2 / +4,0 | 14,6 / −3,4 | 13,7 / −1,9 | 14,7 / +2,5 | 13,7 / +0,3 |
+| 5. 8. 2025 | 16,4 / +8,4 | 13,9 / +3,5 | 14,2 / +4,2 | 16,1 / +7,7 | 14,9 / +5,9 |
+
+- Při známém počasí je chyba rok dopředu **RMSE 14–17, MAPE 1,6–2,2 %** — struktura modelu dlouhý horizont unese.
+- **Poslední trend** pomáhá, když trend trvá (2025: bias +8,4 → +3,5), a **selhává v bodě obratu** (2023: po krizovém poklesu 2022/23 extrapoluje pokles, skutečnost se vrátila k růstu). Skutečnost byla ve všech třech foldech nad držením. Rozhoduje úroveň; extrapolace topné citlivosti a FVE sama téměř nic nemění. Podle zadání je výchozí `posledni`; tři foldy jsou na výběr pravidla málo, tlumená varianta je kompromis pro nejisté období.
+
+Režim počasí (trend `posledni`; RMSE / MAPE / bias / chyba měsíčních objemů):
+
+| fold od | normál | scénáře | scénářů | v pásmu (jen počasí → s chybou modelu) | měsíců v pásmu |
+|---|---|---|---|---|---|
+| 5. 8. 2023 | 36,5 / 4,6 % / +16,1 / 3,3 % | 38,9 / 4,8 % / +14,1 / 3,4 % | 3 | 28 → 51 % | 5 z 13 |
+| 5. 8. 2024 | 30,8 / 3,6 % / +4,0 / 1,6 % | 31,8 / 3,7 % / +0,7 / 1,5 % | 8 | 69 → 81 % | 11 z 13 |
+| 5. 8. 2025 | 38,3 / 4,1 % / +14,3 / 3,0 % | 38,2 / 4,1 % / +11,5 / 2,9 % | 13 | 57 → 71 % | 7 z 13 |
+
+- Bez znalosti počasí je hodinová chyba rok dopředu **MAPE ~4 %**, měsíční objemy **1,5–3,4 %**, roční bias 0–2,6 %; největší odchylky jsou zimní měsíce s neobvyklým počasím (leden 2026 +51) a trend.
+- Scénáře mají menší bias než normál (o ~3 jednotky — odpovídá změřenému zkreslení normálové dráhy), bodová hodinová chyba je stejná; přínos scénářů je pásmo a nezkreslený průměr, ne ostřejší profil.
+- **Pásmo je z krátké historie spíš úzké**: pokrytí 71–81 % hodin při cíli 80 % (ve foldech s ≥ 8 scénáři), měsíční průměry 7–11 z 13. Scénáře z téhož roku nejsou nezávislé; s delší řadou ze stanice se pásmo zpřesní.
+
+**Omezení:** dráhy počasí začínají hned za koncem dat (bez navázání na předpověď D+1 až D+10 — archiv s delším předstihem zatím není); korekční vrstva se v dlouhém horizontu nepoužívá; změny portfolia se nemodelují; klimatologie i scénáře jsou z let 2022–2026, ne z dlouhodobého normálu.
