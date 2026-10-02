@@ -149,8 +149,14 @@ def shape_fit(df: pd.DataFrame, day: pd.Timestamp, warm: tuple | None,
 
 
 def forecast_day(df: pd.DataFrame, day: pd.Timestamp, shape: tuple,
-                 shape_from: pd.Timestamp, window: int | None = None) -> tuple[pd.DataFrame, dict]:
-    """Linearni prefit s danym tvarem a predikce na D+1 (dny jsou nezavisle)."""
+                 shape_from: pd.Timestamp, window: int | None = None,
+                 meteo: pd.DataFrame | None = None) -> tuple[pd.DataFrame, dict]:
+    """Linearni prefit s danym tvarem a predikce na D+1 (dny jsou nezavisle).
+
+    meteo = predpoved pocasi na 15min ose (src/meteo_forecast.py): od cutoffu
+    (zbytek dne D a cele D+1) nahradi namerenou teplotu, osvit a vitr —
+    realisticky rezim; trenink zustava na skutecnych datech.
+    """
     mask = train_mask(df, day, window)
     params = refit(df, mask, shape, fix_shape=True)
     target = day + pd.Timedelta(days=1)
@@ -158,6 +164,12 @@ def forecast_day(df: pd.DataFrame, day: pd.Timestamp, shape: tuple,
     # filtry (tau ~85 h) zapomenou pocatek za ~2 tydny, zbytek je po radcich
     dates = pd.to_datetime(df["date_local"])
     recent = df[((dates >= target - pd.Timedelta(days=PREDICT_HISTORY)) & (dates <= target)).to_numpy()]
+    if meteo is not None:
+        recent = recent.copy()
+        fut = recent.index >= cutoff(day).tz_convert("UTC")
+        fc = meteo.reindex(recent.index[fut])
+        for c in ("temp", "sun", "wind"):
+            recent.loc[fut, c] = fc[c].fillna(recent.loc[fut, c]).to_numpy()
     sel = (pd.to_datetime(recent["date_local"]) == target).to_numpy()
     comp = components(recent, params)[sel]
     comp.insert(0, "skutecnost", recent["baseload"][sel])

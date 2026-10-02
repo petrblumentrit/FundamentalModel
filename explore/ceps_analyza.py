@@ -32,6 +32,16 @@ import pv
 import validate
 
 ROOT = Path(__file__).resolve().parent.parent
+# --bt=slozka: backtest k vyhodnoceni (vychozi simulace/); --meteo=predpoved:
+# model CR pro "prekvapeni CEPS" pocita s predpovedi pocasi (jinak by do testu
+# realistickeho backtestu unikla informace o skutecnem pocasi)
+BT_DIR = ROOT / "simulace"
+METEO_FC = False
+for _a in sys.argv:
+    if _a.startswith("--bt="):
+        BT_DIR = ROOT / _a.split("=", 1)[1]
+    if _a == "--meteo=predpoved":
+        METEO_FC = True
 rm = lambda x: float(np.sqrt(np.nanmean(np.square(x))))
 
 df = etl.load()
@@ -97,12 +107,22 @@ print(f"\nB1) korelace nevysvetlenych odchylek portfolio vs CR (mimo svatky a Va
       f"15min {j.p.corr(j.c):.2f}, denni prumery {dly.p.corr(dly.c):.2f}")
 
 # --- B2) prekvapeni CEPS jako vstup korekce ------------------------------------
-bt = pd.read_csv(ROOT / "simulace" / "predikce_D1.csv", sep=";", decimal=",")
+bt = pd.read_csv(BT_DIR / "predikce_D1.csv", sep=";", decimal=",")
 bt.index = pd.to_datetime(bt.timestamp_utc, utc=True)
 start = bt.vydano.iloc[0]
 mask_c = (dfc.index < backtest.cutoff(pd.Timestamp(str(start)[:10])).tz_convert("UTC"))
 pre_c = validate.fit_masked(dfc, mask_c)            # model CR jen z dat pred backtestem
-cz_model = pd.Series(validate.predict(dfc, pre_c), index=dfc.index)
+dfc_pred = dfc
+if METEO_FC:
+    import meteo_forecast as mf
+    until = backtest.cutoff(pd.Timestamp(str(start)[:10])).tz_convert("UTC")
+    arch = mf.load_archive()
+    fc = mf.to_15min(arch, dfc.index[(dfc.index >= until) & (dfc.index <= arch.index.max())], mf.calibrate(arch, df, until))
+    dfc_pred = dfc.copy()
+    for c in ("temp", "sun", "wind"):
+        dfc_pred.loc[fc.index, c] = fc[c].to_numpy()
+    print("   model CR pro prekvapeni CEPS: predpoved pocasi od", until)
+cz_model = pd.Series(validate.predict(dfc_pred, pre_c), index=dfc.index)
 da = ent["da"].reindex(bt.index.floor("h")).to_numpy()
 x4 = da / cz_model.reindex(bt.index).to_numpy() - 1
 print(f"\n   prekvapeni CEPS x4 v backtestu: prumer {np.nanmean(x4) * 100:+.2f} %, sm. odch. {np.nanstd(x4) * 100:.2f} %")

@@ -29,6 +29,9 @@ OUT = ROOT / "simulace"
 # --prior=vaha: vaha prioru na tvar topne/chladici krivky (fit.PRIOR_WEIGHT; 0 = bez)
 WINDOW = None
 PRIOR = None
+# --meteo=predpoved: na zbytek dne D a D+1 predpoved pocasi z archivu
+# (Analyza/ArchivMeteo.xlsx) misto namerenych hodnot — realisticky rezim
+METEO = None
 for _a in sys.argv:
     if _a.startswith("--out="):
         OUT = ROOT / _a.split("=", 1)[1]
@@ -36,6 +39,8 @@ for _a in sys.argv:
         WINDOW = int(_a.split("=", 1)[1])
     if _a.startswith("--prior="):
         PRIOR = float(_a.split("=", 1)[1])
+    if _a.startswith("--meteo="):
+        METEO = _a.split("=", 1)[1]
 # worker zabere ~1,3 GB RAM (vanocni cleny, trend topeni s dennim tvarem);
 # pri nedostatku pameti system odklada na disk a vypocet se zpomali ~20x
 # (24 workeru na 32 GB: fity tvaru 40 min misto 2 min). Pocet workeru proto
@@ -70,13 +75,27 @@ def n_workers() -> int:
 _df = None
 
 
-def _init(prior=None):
-    global _df
+_fc = None
+
+
+def _init(prior=None, meteo_until=None):
+    global _df, _fc
     import etl
     import fit
     if prior is not None:
         fit.PRIOR_WEIGHT = prior
     _df = etl.load()
+    if meteo_until is not None:
+        _fc = _forecast_meteo(_df, meteo_until)
+
+
+def _forecast_meteo(df, until):
+    """Predpoved pocasi na 15min ose; kalibrace osvitu jen z dat pred `until`."""
+    import meteo_forecast as mf
+    arch = mf.load_archive()
+    kt = mf.calibrate(arch, df, until)
+    idx = df.index[(df.index >= arch.index.min()) & (df.index <= arch.index.max())]
+    return mf.to_15min(arch, idx, kt)
 
 
 def _shape(args):
@@ -99,7 +118,7 @@ def _days(args):
     rows, pars = [], []
     for d in days:
         sd = max(k for k in shapes if k <= d)
-        comp, s = backtest.forecast_day(_df, d, shapes[sd], sd, window)
+        comp, s = backtest.forecast_day(_df, d, shapes[sd], sd, window, meteo=_fc)
         rows.append(comp)
         pars.append(s)
         e = comp["skutecnost"] - comp["predikce"]
@@ -137,7 +156,11 @@ def simulate():
         os.environ[v] = str(THREADS)   # dedi az workery spustene nize
     nw = n_workers()
     print(f"workeru: {nw} (volna pamet {_free_gb():.1f} GB)", flush=True)
-    with ProcessPoolExecutor(nw, initializer=_init, initargs=(PRIOR,)) as ex:
+    meteo_until = None
+    if METEO == "predpoved":
+        meteo_until = backtest.cutoff(sdays[0]).tz_convert("UTC")
+        print(f"meteo: predpoved z archivu, kalibrace osvitu do {meteo_until}", flush=True)
+    with ProcessPoolExecutor(nw, initializer=_init, initargs=(PRIOR, meteo_until)) as ex:
         shapes = {sdays[0]: p0}
         # nejdrive pozdejsi pondeli: jsou dal od warm startu, fit trva dele
         shapes.update(dict(ex.map(_shape, [(d, p0, WINDOW) for d in reversed(sdays[1:])])))
