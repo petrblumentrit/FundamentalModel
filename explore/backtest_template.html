@@ -172,7 +172,9 @@ const SERIES = [
 const vis = SERIES.map(s => s[4]);
 function traces() {
   return SERIES.map(([key, name, color, ax], i) => ({
-    x: D.t, y: D[key], name, type: "scattergl", mode: "lines", yaxis: ax, visible: vis[i],
+    // SVG (ne WebGL "scattergl"): WebGL nemusi byt v prohlizeci dostupny
+    // (vypnuta akcelerace, ovladac) — pak se cary nevykresli, jen tooltip
+    x: D.t, y: D[key], name, type: "scatter", mode: "lines", yaxis: ax, visible: vis[i],
     customdata: key === "f" || key === "k" ? D.vydano : undefined,
     line: { color: css(color), width: ax === "y" ? 1.6 : 1.2 },
     hovertemplate: ax === "y2" ? "%{y:+.1f}" : (key === "y" ? "%{y:.1f}" : "%{y:.1f} (vydáno %{customdata})"),

@@ -26,12 +26,16 @@ sys.path.insert(0, str(ROOT / "src"))
 OUT = ROOT / "simulace"
 # --out=slozka: jiny vystupni adresar (napr. pro srovnavaci beh vedle hlavniho)
 # --okno=dny: trenink jen z poslednich N dni (svatky a jejich okoli z cele historie)
+# --prior=vaha: vaha prioru na tvar topne/chladici krivky (fit.PRIOR_WEIGHT; 0 = bez)
 WINDOW = None
+PRIOR = None
 for _a in sys.argv:
     if _a.startswith("--out="):
         OUT = ROOT / _a.split("=", 1)[1]
     if _a.startswith("--okno="):
         WINDOW = int(_a.split("=", 1)[1])
+    if _a.startswith("--prior="):
+        PRIOR = float(_a.split("=", 1)[1])
 # worker zabere ~1,3 GB RAM (vanocni cleny, trend topeni s dennim tvarem);
 # pri nedostatku pameti system odklada na disk a vypocet se zpomali ~20x
 # (24 workeru na 32 GB: fity tvaru 40 min misto 2 min). Pocet workeru proto
@@ -66,9 +70,12 @@ def n_workers() -> int:
 _df = None
 
 
-def _init():
+def _init(prior=None):
     global _df
     import etl
+    import fit
+    if prior is not None:
+        fit.PRIOR_WEIGHT = prior
     _df = etl.load()
 
 
@@ -117,6 +124,10 @@ def simulate():
           f"({len(targets)} dni); okno {WINDOW or 'cela historie'}", flush=True)
 
     import backtest
+    import fit
+    if PRIOR is not None:
+        fit.PRIOR_WEIGHT = PRIOR
+        print(f"vaha prioru: {PRIOR}", flush=True)
     sdays = backtest.shape_days(issue_days)
     t = time.time()
     # faze 0 v hlavnim procesu — je seriova, tady ma BLAS vsechna jadra
@@ -126,7 +137,7 @@ def simulate():
         os.environ[v] = str(THREADS)   # dedi az workery spustene nize
     nw = n_workers()
     print(f"workeru: {nw} (volna pamet {_free_gb():.1f} GB)", flush=True)
-    with ProcessPoolExecutor(nw, initializer=_init) as ex:
+    with ProcessPoolExecutor(nw, initializer=_init, initargs=(PRIOR,)) as ex:
         shapes = {sdays[0]: p0}
         # nejdrive pozdejsi pondeli: jsou dal od warm startu, fit trva dele
         shapes.update(dict(ex.map(_shape, [(d, p0, WINDOW) for d in reversed(sdays[1:])])))
