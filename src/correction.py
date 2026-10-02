@@ -38,9 +38,10 @@ def irregular_days(days: pd.DatetimeIndex) -> np.ndarray:
     """Svatky, mosty a vanocni obdobi 21. 12. - 3. 1. (model ma chybu 40-90 uz
     od 22. 12.; vlastni vanocni blok v modelu zatim neni)."""
     hol = etl._cz_holidays(days.year.min() - 1, days.year.max() + 1)
-    special = hol | etl._bridges(hol)
+    # kalendar vraci datetime.date — isin proti DatetimeIndex je nenajde
+    special = pd.DatetimeIndex(sorted(hol | etl._bridges(hol)))
     xmas = ((days.month == 12) & (days.day >= 21)) | ((days.month == 1) & (days.day <= 3))
-    return np.asarray(days.isin(list(special)) | xmas)
+    return np.asarray(days.isin(special) | xmas)
 
 
 def features(bt: pd.DataFrame, cutoff_hour: int = 9) -> pd.DataFrame:
