@@ -55,7 +55,16 @@ uv run python explore/zd_analyza.py       # 14   srovnani s domacnostmi PRE (dat
 uv run python explore/vanoce_analyza.py   # 17   Vanoce 2022-2025 (rezidua po dnech a skupinach)
 uv run python explore/ceps_analyza.py     # 19   zatizeni CR (CEPS/ENTSO-E) a predpoved CEPS
 uv run python explore/zatop_test.py       # 25   opozdene zatopeni po teplem obdobi (test na reziduich)
+uv run python explore/dlouhodoba_validace.py  # 31  dopredna validace predikce na rok dopredu
+uv run python explore/dlouhodoba.py --pocasi=scenare  # 32  predikce na rok dopredu od konce dat
 ```
+
+Dlouhodobá predikce (`explore/dlouhodoba.py`): `--pocasi=normal` (jedna
+normálová dráha počasí, čtvrthodinový profil) nebo `--pocasi=scenare` (počasí
+historických let, profil + pásmo nejistoty), `--trend=posledni|drzet`,
+`--dni=365`, `--out=slozka`. Delší řadu počasí ze stejné stanice lze dodat
+jako `Data/meteo_historie.csv` (formát `Meteo15.csv`) — víc scénářů a lepší
+normál.
 
 Volby backtestu: `--out=slozka`, `--meteo=predpoved` (realistický režim s
 archivem předpovědí počasí v `Analyza/ArchivMeteo.xlsx`), `--bias=temp,wind`
@@ -95,3 +104,4 @@ Kalendář (svátky, mosty, prázdniny, vánoční skupiny dnů) se nastavuje v
 | `src/ote.py` | načítání dat OTE (zbytkové diagramy, KZD, přepočtené TDD), ČEPS a ENTSO-E z `Analyza/` |
 | `src/kalendar.py` | kalendář z `config/kalendar.yaml`: svátky, mosty, prázdniny, zvláštní období (Vánoce) |
 | `src/correction.py` | korekce predikce D+1 z chyb dřívějších predikcí (online, reziduová vrstva) |
+| `src/longterm.py` | dlouhodobá predikce: budoucí osa, počasí normál / scénáře, pravidlo trendu, pásmo nejistoty |

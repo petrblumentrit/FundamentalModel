@@ -585,3 +585,21 @@ Režim počasí (trend `posledni`; RMSE / MAPE / bias / chyba měsíčních obje
 - **Pásmo je z krátké historie spíš úzké**: pokrytí 71–81 % hodin při cíli 80 % (ve foldech s ≥ 8 scénáři), měsíční průměry 7–11 z 13. Scénáře z téhož roku nejsou nezávislé; s delší řadou ze stanice se pásmo zpřesní.
 
 **Omezení:** dráhy počasí začínají hned za koncem dat (bez navázání na předpověď D+1 až D+10 — archiv s delším předstihem zatím není); korekční vrstva se v dlouhém horizontu nepoužívá; změny portfolia se nemodelují; klimatologie i scénáře jsou z let 2022–2026, ne z dlouhodobého normálu.
+
+### 2026-10-02 — dlouhodobá predikce: výstupní skript a graf (krok 32)
+
+`explore/dlouhodoba.py` — predikce od konce dat z uloženého plného fitu (`models/*_joint.npz`), volby `--pocasi=normal|scenare`, `--trend=posledni|drzet|…`, `--dni=365`, `--out=složka`. Výstupy do `simulace/dlouhodoba/` (mimo repo): `predikce.csv` (15 min, složky báze / topení / chlazení / FVE, predikce, u scénářů `pasmo_dolni` a `pasmo_horni`), `predikce_scenare.csv` (jednotlivé dráhy), `predikce_mesice.csv`, `predikce.html` (offline graf s plotly.js v souboru: při záběru nad 45 dní denní průměry s pásmem, po přiblížení čtvrthodiny; volitelně skutečnost před rokem; měsíční tabulka se složkami).
+
+**Predikce 4. 8. 2026 – 4. 8. 2027** (trend `posledni`):
+
+| | průměr | proti posledním 365 dnům (655,1) | maximum |
+|---|---|---|---|
+| scénáře (18 drah) | 669,0 | +2,1 % | 994 (14. 1. 2027 17:00) |
+| normál | 666,0 | +1,7 % | 987 |
+| scénáře, trend `drzet` | 659,8 | +0,7 % | 979 |
+
+Poslední trend přidává za rok v průměru +9 jednotek (1,4 %), z toho většinu růst úrovně (+14 za posledních 12 měsíců). Scénáře jsou proti normálu o 3 jednotky výš (chlazení v srpnu a září, přechodná období). Průměrná šířka čtvrthodinového pásma 77, u měsíčních průměrů 23–74 (nejširší leden: 736–810).
+
+Měsíční průměry (scénáře): 8/2026 611 · 9/ 619 · 10/ 642 · 11/ 717 · 12/ 740 · 1/2027 769 · 2/ 747 · 3/ 689 · 4/ 651 · 5/ 614 · 6/ 629 · 7/ 608.
+
+**Další kroky:** delší řada počasí ze stanice (`Data/meteo_historie.csv`) — víc nezávislých scénářů a kalibrované pásmo; navázání na předpověď počasí pro první dny (archiv s předstihem D+2 až D+10); pravidlo trendu znovu ověřit s dalšími daty (foldy jsou jen tři).
