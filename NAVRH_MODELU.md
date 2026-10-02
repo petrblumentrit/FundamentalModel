@@ -425,3 +425,11 @@ Backtest v8: RMSE 14,30 / MAPE 1,66 % (v7 14,48 / 1,67 %), s korekcí 12,93 / 1,
 Výhrada: kroky 8–23 se ladily a hodnotily na stejném roce backtestu (8/2025 – 8/2026) → čísla mohou být mírně optimistická; čistý test dají data po 4. 8. 2026.
 
 **Oprava korekce** (`src/correction.py`): `irregular_days` porovnávalo `DatetimeIndex` s množinou `datetime.date`, takže svátky a mosty mimo Vánoce se od zavedení kalendáře nevyřazovaly (vyřazovalo se jen 21. 12. – 3. 1.). Po opravě (10 dní v backtestu): s korekcí 12,93 → **12,84**, MAPE 1,482 → **1,473 %**; s předpovědí počasí 18,01 → 17,94.
+
+### 2026-10-02 — opožděné zatopení po teplém období (krok 25)
+
+**Pozorování z praxe** (uživatel): po teplém víkendu nebo týdnu se v administrativních budovách po ochlazení netopí hned — zatopí se během dne nebo až další den. Test na reziduích plného fitu (`explore/zatop_test.py`, mimo Vánoce):
+- **První chladný pracovní den po teplém období** (průměr ≤ 12 °C po 2–5 dnech ≥ 15 °C; 7–10 událostí za 4,5 roku): reziduum v pracovní době −2 ± 3 (podle definice −7 až 0), v noci −3 až −9, **den poté −4 až −8**. Směr odpovídá pozorování, velikost je do 1 % zátěže a na hranici šumu.
+- **Stav ústředního topení podle pravidla vyhlášky** (zahájení při denním průměru < 13 °C dva dny po sobě, přerušení při > 13 °C dva dny po sobě): chladné dny ve stavu „neběží“ (56 dní, hlavně září, začátek října, květen) mají reziduum −2,0 ± 1,4; pracovní dny celkově 0, volné dny −6,4 ± 2,6, podzimní pracovní doba −5,2 ± 2,5 (n = 14).
+- **Závěr: samostatný člen nezavádět.** Většinu zpoždění už nese pomalý kanál teplotního filtru (váha 64 %, τ ≈ 82 h); zbytek je ~5 jednotek ve ~12 dnech ročně — na ročním RMSE pod 0,01 — a z tak mála událostí by se člen odhadoval hůř, než kolik by přinesl. Část chytá korekce z ranní chyby dne vydání (x2). Vrátit se, až bude událostí víc, nebo pokud by se dal použít skutečný údaj o zahájení topné sezóny.
+- Vedlejší nález: 24. 9. 2025 (nejhorší den backtestu, −32) není zatopení — spotřeba je o 35–40 níž rovnoměrně od 1 h do 16 h včetně noci (jednorázová událost v portfoliu nebo v datech); následující den naopak +25 až +40 v pracovní době.
