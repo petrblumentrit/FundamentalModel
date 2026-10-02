@@ -38,7 +38,7 @@ import pandas as pd
 from scipy.interpolate import BSpline
 
 import kalendar
-from etl import TZ
+from etl import TZ, step_hours
 
 K_PROFILE = 12  # harmonickych v dennim profilu
 K_PRAZ = 4      # harmonickych v prazdninove korekci
@@ -140,6 +140,12 @@ def design(df: pd.DataFrame, t0, span_days: float) -> np.ndarray:
     tod = df["tod"].to_numpy()
     S = _spline_basis(x, span_days)
     F = _fourier(tod, K_PROFILE)
+
+    def fsub(k: int) -> np.ndarray:
+        """Prvnich k harmonickych z F (cos/sin se pocitaji jen jednou)."""
+        assert k <= K_PROFILE
+        return np.hstack([F[:, :k], F[:, K_PROFILE:K_PROFILE + k]])
+
     dt = df["daytype"].to_numpy()
     blocks = [S]
     for k in range(N_DAYTYPES):
@@ -149,7 +155,7 @@ def design(df: pd.DataFrame, t0, span_days: float) -> np.ndarray:
             b = np.hstack([m, b])
         blocks.append(b)
     pz = df["prazdniny"].to_numpy(float)[:, None]
-    blocks.append(np.hstack([pz, _fourier(tod, K_PRAZ) * pz]))
+    blocks.append(np.hstack([pz, fsub(K_PRAZ) * pz]))
     # rano pracovniho dne po vikendu nebo svatku; most ma vlastni celodenni
     # clen (jinak by jeho celodenni propad stahl ranni clen pondeli)
     most = df["most"].to_numpy()
@@ -161,11 +167,11 @@ def design(df: pd.DataFrame, t0, span_days: float) -> np.ndarray:
         in_period |= df["obd_" + name].to_numpy()
     for n_run in (1, 2):
         mo = (most & ~in_period & (df["most_delka"].to_numpy() == n_run)).astype(float)[:, None]
-        blocks.append(np.hstack([mo, _fourier(tod, K_MOST) * mo]))
+        blocks.append(np.hstack([mo, fsub(K_MOST) * mo]))
     blocks.append(_light_basis(tod) * df["tma"].to_numpy()[:, None])
     for name, k in groups:
         g = df["obd_" + name].to_numpy(float)[:, None]
-        blocks.append(np.hstack([g, _fourier(tod, k) * g]) if k else g)
+        blocks.append(np.hstack([g, fsub(k) * g]) if k else g)
     return np.hstack(blocks)
 
 
@@ -179,16 +185,24 @@ def daily_table(df: pd.DataFrame) -> pd.DataFrame:
     return d
 
 
+def rows_per_day(df: pd.DataFrame) -> float:
+    return 24.0 / step_hours(df)
+
+
 def mild_dates(df: pd.DataFrame) -> pd.DatetimeIndex:
     """Dny v mrtvem pasmu; predchozi den take mirny (tepelna setrvacnost)."""
     d = daily_table(df)
     ok = (d["temp"].between(*MILD_BAND)
           & d["temp"].shift(1).between(*PREV_BAND)
-          & (d["n"] >= 92))  # DST dny maji 92/100 intervalu
+          & (d["n"] >= 23 * rows_per_day(df) / 24))  # den zmeny casu ma 23 hodin
     return d.index[ok]
 
 
 def fit(df: pd.DataFrame, smooth: float = SMOOTH) -> dict:
+    # penalizace je absolutni proti X'X, ktere roste s poctem radku na den —
+    # pro hodinova data (24 misto 96 radku) ji umerne zmensit
+    rpd = rows_per_day(df)
+    smooth = smooth * rpd / 96.0
     dates = mild_dates(df)
     sel = df[pd.to_datetime(df["date_local"]).isin(dates)]
     t0 = df["date_local"].min()
@@ -213,7 +227,8 @@ def fit(df: pd.DataFrame, smooth: float = SMOOTH) -> dict:
     return {
         "coef": coef, "t0": str(t0), "span_days": span, "smooth": smooth,
         "k_profile": K_PROFILE, "k_praz": K_PRAZ, "knot_days": KNOT_DAYS,
-        "n_mild_days": len(dates), "rmse": float(np.sqrt(np.mean(resid**2))),
+        "n_mild_days": len(dates), "rows_per_day": rpd,
+        "rmse": float(np.sqrt(np.mean(resid**2))),
         "mae": float(np.mean(np.abs(resid))),
         "r2": float(1 - resid.var() / y.var()),
     }
@@ -280,6 +295,7 @@ def load(path: Path | None = None) -> dict:
     out = {k: raw[k] for k in raw.files}
     for k in ("t0",):
         out[k] = str(out[k])
-    for k in ("span_days", "smooth", "rmse", "mae", "r2"):
-        out[k] = float(out[k])
+    for k in ("span_days", "smooth", "rmse", "mae", "r2", "rows_per_day"):
+        if k in out:
+            out[k] = float(out[k])
     return out

@@ -6,6 +6,13 @@ import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "Data"
 TZ = "Europe/Prague"
+SRC_DIR = Path(__file__).resolve().parent
+# mezipamet nactenych dat (v Data/, mimo git): plati, dokud se nezmeni vstupni
+# soubory, konfigurace kalendare ani kod, ktery je zpracovava
+CACHE = DATA_DIR / ".etl_cache.pkl"
+_CACHE_DEPS = [DATA_DIR / "baseload.csv", DATA_DIR / "Meteo15.csv",
+               SRC_DIR.parent / "config" / "kalendar.yaml",
+               SRC_DIR / "etl.py", SRC_DIR / "kalendar.py", SRC_DIR / "sun.py"]
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
@@ -17,8 +24,50 @@ def _read_csv(path: Path) -> pd.DataFrame:
     return df.set_index("timestamp").sort_index()
 
 
+def step_hours(df: pd.DataFrame) -> float:
+    """Casovy krok dat [h] (15 min = 0,25; hodinova agregace = 1)."""
+    idx = df.index[:200]
+    return float(np.median((idx[1:] - idx[:-1]).total_seconds())) / 3600.0
+
+
+def hourly(df: pd.DataFrame) -> pd.DataFrame:
+    """Hodinova agregace vystupu load(): spojite veliciny prumerem (spotreba,
+    meteo, tma), kalendarni sloupce prvni hodnotou. Pro fit tvaru (nelinearni
+    parametry nepotrebuji ctvrthodinove rozliseni, 4x mene radku)."""
+    num = [c for c in ("baseload", "sun", "wind", "temp", "tma") if c in df.columns]
+    g = df.groupby(df.index.floor("h"))
+    out = g[[c for c in df.columns if c not in num]].first()
+    out[num] = g[num].mean()
+    return out[df.columns]
+
+
+def _cache_key() -> tuple:
+    return tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in _CACHE_DEPS)
+
+
 def load(with_local_time: bool = True) -> pd.DataFrame:
-    """Spotreba + meteo na spolecne UTC ose; volitelne sloupce lokalniho kalendare."""
+    """Spotreba + meteo na spolecne UTC ose; volitelne sloupce lokalniho kalendare.
+
+    Plny vystup (s kalendarem) se uklada do mezipameti — nacteni ~10 s ->
+    <1 s; backtest ho nacita v kazdem workeru.
+    """
+    if with_local_time:
+        key = _cache_key()
+        try:
+            cached_key, cached = pd.read_pickle(CACHE)
+            if cached_key == key:
+                return cached
+        except Exception:
+            pass
+        df = _load(True)
+        tmp = CACHE.with_suffix(f".{np.random.randint(1 << 30)}.tmp")
+        pd.to_pickle((key, df), tmp)
+        tmp.replace(CACHE)             # atomicky — workery mohou zapisovat soucasne
+        return df
+    return _load(False)
+
+
+def _load(with_local_time: bool) -> pd.DataFrame:
     bl = _read_csv(DATA_DIR / "baseload.csv").rename(columns={"baseline": "baseload"})
     mt = _read_csv(DATA_DIR / "Meteo15.csv")
     # duplicitni timestampy (artefakty exportu kolem zmen casu) -> prumer

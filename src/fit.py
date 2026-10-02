@@ -160,7 +160,7 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     # penalizace hladkosti urovne musi rust s poctem radku, jinak je tu proti
     # 161k radkum 7x slabsi nez pri fitu z ~200 mirnych dnu a uroven zacne
     # chytat sezonnost, kterou ma nest topeni (viz varovani v navrhu)
-    smooth = bp["smooth"] * int(mask.sum()) / (float(bp["n_mild_days"]) * 96.0)
+    smooth = bp["smooth"] * int(mask.sum()) / (float(bp["n_mild_days"]) * float(bp.get("rows_per_day", 96.0)))
     pen[sl_b["level"], sl_b["level"]] = smooth * (D2.T @ D2)
     D1 = np.diff(np.eye(n_p - 1), axis=0)
     pv_lo = p_F + n_h + n_c + 1
@@ -176,15 +176,28 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     n_hp = len(heating.PARAM_NAMES)
     n_cp = len(cooling.PARAM_NAMES)
 
-    T_h = heating.trend_design(df, t0_p, span_p)
+    # baze nezavisle na nelinearnich parametrech — spocitat jednou (driv se
+    # skladaly znovu pri kazdem vyhodnoceni, ~1/3 casu fitu tvaru)
+    K_h = heating.k_basis(df)[mask]
+    K_c = cooling.k_basis(df)[mask]
+    C_pv = pv.capacity_basis(df, t0_p, span_p)[mask]
+    T_h = heating.trend_design(df, t0_p, span_p)[mask]
+    sun_m = df["sun"].to_numpy()[mask]
+    temp_m = df["temp"].to_numpy()[mask]
+    V = np.empty((len(y), n_h + n_c + n_p + n_t))
+    sl_vh, sl_vc = slice(0, n_h), slice(n_h, n_h + n_c)
+    sl_vp, sl_vt = slice(n_h + n_c, n_h + n_c + n_p), slice(n_h + n_c + n_p, None)
 
     def blocks(q):
         th_h, th_c, gamma = q[:n_hp], q[n_hp:n_hp + n_cp], q[-1]
-        A_pv = pv.design(df, gamma, t0_p, span_p)[mask]
-        H = heating.shape_term(df, th_h)[:, None]
-        A_tr = (T_h * H)[mask]
-        V = np.hstack([(heating.k_basis(df) * H)[mask],
-                       cooling.design(df, th_c)[mask], A_pv, A_tr])
+        H = heating.shape_term(df, th_h)[mask][:, None]
+        np.multiply(K_h, H, out=V[:, sl_vh])
+        np.multiply(K_c, cooling.shape_term(df, th_c)[mask][:, None], out=V[:, sl_vc])
+        # FVE se od spotreby odecita -> zaporne sloupce (jako pv.design)
+        w_pv = sun_m * (1.0 - gamma * (temp_m - pv.T_REF))
+        np.multiply(C_pv, -w_pv[:, None], out=V[:, sl_vp])
+        np.multiply(T_h, H, out=V[:, sl_vt])
+        A_pv, A_tr = V[:, sl_vp], V[:, sl_vt]
         return V, float(np.mean((A_pv * A_pv).sum(0))), float(np.mean((A_tr * A_tr).sum(0)))
 
     def inner(q):

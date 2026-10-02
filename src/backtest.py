@@ -38,6 +38,7 @@ ISSUE_HOUR = 10   # vydani predikce v D [h, mistni cas]
 CUTOFF_HOUR = 9   # konec dostupnych dat v D (H-1)
 SHAPE_REFIT_DOW = 0   # den vydani s plnym (nelinearnim) prefitem, 0 = pondeli
 HOLIDAY_CONTEXT = 3   # [dny] okoli svatku, ktere se pri omezenem okne bere cele
+PREDICT_HISTORY = 60  # [dny] historie pro vypocet slozek predikce D+1
 
 
 def _wall(day: pd.Timestamp, hour: int) -> pd.Timestamp:
@@ -123,10 +124,28 @@ def shape_days(issue_days: list[pd.Timestamp]) -> list[pd.Timestamp]:
     return [d for i, d in enumerate(issue_days) if i == 0 or d.dayofweek == SHAPE_REFIT_DOW]
 
 
+_hourly_cache: dict = {}
+
+
+def _hourly(df: pd.DataFrame) -> pd.DataFrame:
+    """Hodinova agregace df (v ramci procesu jednou)."""
+    key = (id(df), len(df))
+    if key not in _hourly_cache:
+        _hourly_cache.clear()
+        _hourly_cache[key] = etl.hourly(df)
+    return _hourly_cache[key]
+
+
 def shape_fit(df: pd.DataFrame, day: pd.Timestamp, warm: tuple | None,
               window: int | None = None) -> tuple:
-    """Plny (nelinearni) prefit z dat do cutoffu dne; warm=None = cely retezec."""
-    return refit(df, train_mask(df, day, window), warm)
+    """Plny (nelinearni) prefit z dat do cutoffu dne; warm=None = cely retezec.
+
+    Fituje se z hodinove agregace (4x mene radku, ~3-4x rychleji): parametry
+    tvaru (bilancni teplota, sirka, setrvacnost) ctvrthodinove rozliseni
+    nepotrebuji. Linearni cast a predikce (forecast_day) zustavaji 15min.
+    """
+    dh = _hourly(df)
+    return refit(dh, train_mask(dh, day, window), warm)
 
 
 def forecast_day(df: pd.DataFrame, day: pd.Timestamp, shape: tuple,
@@ -135,9 +154,13 @@ def forecast_day(df: pd.DataFrame, day: pd.Timestamp, shape: tuple,
     mask = train_mask(df, day, window)
     params = refit(df, mask, shape, fix_shape=True)
     target = day + pd.Timedelta(days=1)
-    sel = (pd.to_datetime(df["date_local"]) == target).to_numpy()
-    comp = components(df, params)[sel]
-    comp.insert(0, "skutecnost", df["baseload"][sel])
+    # slozky staci pocitat z poslednich PREDICT_HISTORY dni: setrvacnostni
+    # filtry (tau ~85 h) zapomenou pocatek za ~2 tydny, zbytek je po radcich
+    dates = pd.to_datetime(df["date_local"])
+    recent = df[((dates >= target - pd.Timedelta(days=PREDICT_HISTORY)) & (dates <= target)).to_numpy()]
+    sel = (pd.to_datetime(recent["date_local"]) == target).to_numpy()
+    comp = components(recent, params)[sel]
+    comp.insert(0, "skutecnost", recent["baseload"][sel])
     comp.insert(0, "vydano", _wall(day, ISSUE_HOUR))
     comp.insert(1, "data_do", cutoff(day))
     s = summary(params, df, mask)

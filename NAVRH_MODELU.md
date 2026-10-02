@@ -382,3 +382,16 @@ Vánoce 2025/26 (naučené jen z 2022–2024), RMSE dne v6 → v7: 24. 12. 84 �
 - Nevysvětlené odchylky portfolia a ČR korelují 0,32–0,33. „Překvapení ČEPS“ (předpověď ČEPS / model ČR z dat před backtestem − 1) jako vstup korekce: RMSE 13,09 → 12,85, ale jen díky Vánocům, mimo Vánoce 12,52 → 12,60, MAPE beze změny → **zatím nepřidávat**. Backtest ale používá skutečné meteo, předpověď ČEPS předpovězené — přínos jeho předpovědi počasí tu nejde změřit; vrátit se s archivem meteo předpovědí a ověřit čas zveřejnění.
 
 **Další kroky:** mosty kolem Vánoc (22.–23. 12., 2. 1.); vliv prioru na jaro; letní chvost topení vs úroveň; archiv meteo předpovědí (realistický backtest, přínos ČEPS); validace mimo vzorek pro aktuální verzi.
+
+### 2026-10-02 — zrychlení backtestu 14,3 → 5,0 min (krok 20)
+
+Profil: fit tvaru vyhodnocuje model ~150–260× (numerická Jacobiho matice, 13 parametrů); vyhodnocení ~1,2 s, z toho ~0,4 s opakované skládání bloků nezávislých na parametrech. Načtení dat 11–32 s v každém procesu. Denní krok ~2 s (matice báze 3×, predikce na celé historii).
+
+Úpravy (A–D beze změny výsledků, ověřeno porovnáním — predikce shodné do 4·10⁻⁷):
+- **A** mezipaměť `etl.load()` v `Data/.etl_cache.pkl` (klíč: čas změny a velikost vstupních dat, `config/kalendar.yaml` a zpracovávajícího kódu) — 0,03 s místo 11–24 s;
+- **B** v `fit.joint` bloky nezávislé na nelineárních parametrech (denní tvary topení/chlazení, rampy FVE, trend topení) spočítané jednou, matice V předalokovaná — sestavení bloků 0,39 → 0,11 s na vyhodnocení;
+- **C** v `base.design` Fourierovy funkce jednou (nižší řády jako výřezy) — sestavení báze ~2×;
+- **D** složky predikce D+1 jen z posledních 60 dní (`backtest.PREDICT_HISTORY`; setrvačnostní filtry τ ~85 h zapomenou počátek za ~2 týdny) — denní krok 2,0 → 1,3 s;
+- **E** fit tvaru (fáze 0 a 1) z **hodinové agregace** (`etl.hourly`, 4× méně řádků); lineární část a predikce zůstávají 15min. Setrvačnostní filtry počítají s krokem dat (`etl.step_hours`), penalizace hladkosti úrovně a výběr mírných dnů s počtem řádků na den. Ověřeno: parametry tvaru shodné na setiny (T_b 16,70/16,67 °C, τ 81,6/81,6 h), přesnost predikce 7 dní shodná (12,60/12,60; 8,71/8,71), plný fit 68 → 13 s.
+
+Backtest: fáze 0 136 → 57 s, fáze 1 531 → 112 s, fáze 2 ~190 → ~130 s; RMSE / MAPE beze změny (14,48 / 1,67 %, s korekcí 13,09 / 1,49 %), predikce se liší v průměru o 0,13. Zbývající rezerva hlavně ve fázi 2 (matice báze se skládá pro každý den znovu).

@@ -19,6 +19,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from etl import step_hours
+
 from heating import softplus
 
 K_TOD = 4          # harmonickych v k_c(cas dne)
@@ -38,7 +40,7 @@ MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 
 def t_star(df: pd.DataFrame, a_c: float, w_c: float, tau_c: float) -> np.ndarray:
     te = df["temp"].to_numpy() + a_c * df["sun"].to_numpy()
-    alpha_ema = 1.0 - np.exp(-0.25 / tau_c)  # 15min krok
+    alpha_ema = 1.0 - np.exp(-step_hours(df) / tau_c)  # krok dat (15 min / hodina)
     smooth = pd.Series(te).ewm(alpha=alpha_ema, adjust=False).mean().to_numpy()
     return w_c * te + (1.0 - w_c) * smooth
 

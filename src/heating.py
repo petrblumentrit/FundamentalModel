@@ -29,6 +29,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from etl import step_hours
 from scipy.optimize import least_squares
 
 import pv
@@ -66,7 +68,7 @@ def t_effective(df: pd.DataFrame, a: float, b: float) -> np.ndarray:
 def t_star(df: pd.DataFrame, a: float, b: float, w: float, tau: float) -> np.ndarray:
     """Dvoukanalova efektivni teplota na cele souvisle ose (EMA nelze na vyseku)."""
     te = t_effective(df, a, b)
-    alpha_ema = 1.0 - np.exp(-0.25 / tau)  # 15min krok
+    alpha_ema = 1.0 - np.exp(-step_hours(df) / tau)  # krok dat (15 min / hodina)
     smooth = pd.Series(te).ewm(alpha=alpha_ema, adjust=False).mean().to_numpy()
     return w * te + (1.0 - w) * smooth
 
