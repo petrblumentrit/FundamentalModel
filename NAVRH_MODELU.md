@@ -495,3 +495,20 @@ Hodinový fit celého řetězce 12,22 → 11,77. Leden 12,8 → 11,6 (s korekcí
 **Korekční vrstva — tvar chyby podle třídy dne** (zkoušeno, nezavedeno): tvar chyby x3 počítaný zvlášť z posledních pracovních a zvlášť z posledních volných dnů dával na v9 12,42 → 12,20; po opravě v modelu už nic (11,94 beze změny vs 12,03, realisticky 16,93 vs 17,00). Chyba byla strukturální, ne drift — korekce zůstává beze změny. Nepomohl ani pomalý bias (průměr chyby posledních 7 dní) a chyba stejného dne minulého týdne.
 
 Plný fit na 15min datech: RMSE 12,71 → **12,26**.
+
+### 2026-10-02 — průběh prázdninového efektu přes léto (krok 29)
+
+**Diagnostika** (rezidua plného fitu, pracovní dny po desetidenních úsecích a letech): prázdninový člen byl jeden blok 1. 7. – 31. 8. (konstanta + 4 harmonické), efekt ale přes léto není stejný a **opakuje se každý rok**: 21.–30. 6. +5,2; 1.–10. 7. −3,7; **21. 7. – 9. 8. −7** (v 7–8 h −23 až −25 — dovolené vrcholí, hlavně ranní náběh); **20.–29. 8. +6,1** (návrat před koncem prázdnin, celý den); 30. 8. – 18. 9. −3 až −4. Znaménka se shodují ve 4–5 letech z 5 (21. 7.: −6,9 / −5,4 / −4,9 / −7,6 / −11,0). Volné dny opačně: červenec až polovina srpna +3 až +8, červen a září záporné. Úroveň báze (uzly po 90 dnech) tak rychlý průběh neunese.
+
+**Člen „průběh léta“ v bázi** (`config/kalendar.yaml` → `prazdniny.prubeh`, `src/kalendar.py`, `src/base.py`, ETL sloupec `leto_den`): hladká funkce dne v létě — kubické B-spliny v okně 10. 6. – 20. 9. s uzly po 10 dnech (9 funkcí, na okrajích okna nulové); pro pracovní dny s vlastním denním tvarem (konstanta + 2 harmonické, 45 parametrů), pro volné dny jen úroveň (9 parametrů). Stejný průběh pro všechny roky; prázdninový blok 1. 7. – 31. 8. zůstává (skok na začátku prázdnin je skutečný).
+
+| backtest | RMSE | MAPE | + korekce | + korekce MAPE |
+|---|---|---|---|---|
+| v10 tvar pro volné dny | 13,41 | 1,58 % | 11,94 | 1,381 % |
+| **v11 průběh léta** | **13,13** | **1,53 %** | **11,62** | **1,337 %** |
+| realisticky v10 | 17,95 | 2,00 % | 16,93 | 1,868 % |
+| **realisticky v11** | **17,71** | **1,96 %** | **16,72** | **1,831 %** |
+
+Léto 2026 se v backtestu předpovídá z průběhu naučeného na létech 2022–2025: s korekcí červen 11,1 → 10,0, červenec 12,8 → 11,3, srpen 12,3 → 10,8; ostatní měsíce beze změny (září 11,6 → 12,1). Hodinový fit celého řetězce 11,77 → 11,35.
+
+Plný fit na 15min datech: RMSE 12,26 → **11,87**.

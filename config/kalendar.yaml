@@ -20,6 +20,10 @@ mosty:
 
 prazdniny:
   letni: {od: "07-01", do: "08-31"}
+  # prubeh leta: prazdninovy efekt neni cele leto stejny (nejhlubsi 21. 7. -
+  # 9. 8., konec srpna uz vys). Hladky clen v danem okne s uzly po `uzel_dni`
+  # dnech, pro pracovni dny s vlastnim dennim tvarem (`harmonicke`).
+  prubeh: {od: "06-10", do: "09-20", uzel_dni: 10, harmonicke: 2}
 
 # Zvlastni obdobi: kazda skupina je aditivni clen baze s vlastnim dennim
 # tvarem (konstanta + `harmonicke` Fourierovych harmonickych). Skupiny se

@@ -12,6 +12,13 @@ nepusobi topeni ani chlazeni):
   typ dne; profil Po-Ct je bez konstanty (uroven nese spline), ostatni typy
   maji konstantni offset vuci Po-Ct
 - prazdniny: konstanta + kratka Fourierova korekce (letni skolni volno)
+- prubeh leta: prazdninovy efekt neni po cele leto stejny — pracovni dny jsou
+  21. 7. - 9. 8. o ~7 niz (v 7-8 h az -25; dovolene vrcholi), 20.-29. 8. o
+  ~6 vys (navrat pred koncem prazdnin), kazdy rok stejne. Hladky clen podle
+  dne v lete (kubicke B-spliny v okne z config/kalendar.yaml, na okrajich
+  nulove): pro pracovni dny s vlastnim dennim tvarem (konstanta +
+  harmonicke), pro volne dny jen uroven. Uroven (uzly po 90 dnech) tak
+  rychly prubeh neunese.
 - rano po volnu: pracovni den po vikendu/svatku ma do ~NIGHT_END h vlastni
   rezim (noc z nedele na pondeli je jeste vikendova, prechod na pracovni
   rezim probiha az behem rana). Aditivni clen z kubickych B-splin na
@@ -65,6 +72,8 @@ LIGHT_KNOT = 1.0           # [h] rozestup uzlu aktivity osvetleni
 LIGHT_RIDGE = 1.0          # ridge osvetleni ve fitu z mirnych dnu (relativne)
 GLOOM_WINDOW = (5.0, 21.0) # [h] okno clenu sera pres den (mistni cas)
 GLOOM_KNOT = 2.0           # [h] rozestup uzlu aktivity pri seru
+
+SUMMER = kalendar.summer_course()   # okno prubehu leta (None = clen vypnut)
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 
@@ -125,6 +134,15 @@ def _gloom_basis(tod: np.ndarray) -> np.ndarray:
 N_GLOOM = len(_window_knots(*GLOOM_WINDOW, GLOOM_KNOT)) - 2
 
 
+def _summer_basis(pos: np.ndarray) -> np.ndarray:
+    """B-spliny podle dne v lete (pos = poradi dne v okne + cast dne), mimo okno nuly."""
+    return _window_basis(pos, 0.0, float(SUMMER["dni"]), SUMMER["uzel_dni"])
+
+
+N_SUMMER = len(_window_knots(0.0, float(SUMMER["dni"]), SUMMER["uzel_dni"])) - 2 if SUMMER else 0
+K_SUMMER = SUMMER["harmonicke"] if SUMMER else 0
+
+
 def _n_spline(span_days: float) -> int:
     return len(np.arange(0.0, span_days + KNOT_DAYS, KNOT_DAYS)) + 2
 
@@ -143,6 +161,8 @@ def _slices(span_days: float) -> dict:
     out["most2"] = slice(i, i + 1 + 2 * K_MOST); i += 1 + 2 * K_MOST
     out["svetlo"] = slice(i, i + N_LIGHT); i += N_LIGHT
     out["sero"] = slice(i, i + N_GLOOM); i += N_GLOOM
+    out["leto_prac"] = slice(i, i + N_SUMMER * (1 + 2 * K_SUMMER)); i += N_SUMMER * (1 + 2 * K_SUMMER)
+    out["leto_vol"] = slice(i, i + N_SUMMER); i += N_SUMMER
     for name, k in kalendar.period_groups():
         out["obd_" + name] = slice(i, i + 1 + 2 * k); i += 1 + 2 * k
     out["total"] = i
@@ -185,6 +205,13 @@ def design(df: pd.DataFrame, t0, span_days: float) -> np.ndarray:
         blocks.append(np.hstack([mo, fsub(K_MOST) * mo]))
     blocks.append(_light_basis(tod) * df["tma"].to_numpy()[:, None])
     blocks.append(_gloom_basis(tod) * df["sero"].to_numpy()[:, None])
+    if SUMMER:
+        ld = df["leto_den"].to_numpy()
+        Sb = _summer_basis(np.where(ld >= 0, ld + tod / 24.0, -1.0))
+        Phi = np.hstack([np.ones((len(df), 1)), fsub(K_SUMMER)]) if K_SUMMER else np.ones((len(df), 1))
+        work = (dt <= 1)[:, None]
+        blocks.append((Sb[:, :, None] * Phi[:, None, :]).reshape(len(df), -1) * work)
+        blocks.append(Sb * ~work)
     for name, k in groups:
         g = df["obd_" + name].to_numpy(float)[:, None]
         blocks.append(np.hstack([g, fsub(k) * g]) if k else g)
@@ -241,6 +268,10 @@ def fit(df: pd.DataFrame, smooth: float = SMOOTH) -> dict:
     # sero se z mirnych dnu (malo tmavych dni) odhaduje spatne — stejne ukotveni
     sl_g = sl["sero"]
     P[sl_g, sl_g] += LIGHT_RIDGE * np.trace(XtX) / p * np.eye(sl_g.stop - sl_g.start)
+    # prubeh leta: mirnych dni je v lete malo — take ukotvit, odhadne joint fit
+    for key in ("leto_prac", "leto_vol"):
+        sl_s = sl[key]
+        P[sl_s, sl_s] += LIGHT_RIDGE * np.trace(XtX) / p * np.eye(sl_s.stop - sl_s.start)
     coef = np.linalg.solve(XtX + P, X.T @ y)
     resid = y - X @ coef
     return {
@@ -306,6 +337,19 @@ def gloom_curve(params: dict, tod: np.ndarray | None = None) -> np.ndarray:
     if tod is None:
         tod = np.arange(0, 24, 0.25)
     return _gloom_basis(tod) @ params["coef"][_slices(params["span_days"])["sero"]]
+
+
+def summer_curve(params: dict, pos: np.ndarray, tod: float | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Prubeh leta podle dne v okne: (pracovni dny, volne dny). tod=None =
+    denni prumer (jen konstantni slozka), jinak hodnota v danem case dne."""
+    sl = _slices(params["span_days"])
+    Sb = _summer_basis(np.asarray(pos, float))
+    c = params["coef"][sl["leto_prac"]].reshape(N_SUMMER, 1 + 2 * K_SUMMER)
+    phi = np.zeros(1 + 2 * K_SUMMER)
+    phi[0] = 1.0
+    if tod is not None and K_SUMMER:
+        phi[1:] = _fourier(np.array([tod]), K_SUMMER)[0]
+    return Sb @ (c @ phi), Sb @ params["coef"][sl["leto_vol"]]
 
 
 def save(params: dict, path: Path | None = None) -> Path:

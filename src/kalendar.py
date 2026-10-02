@@ -129,6 +129,29 @@ def period_flags(dates: pd.Series, hol: set) -> dict[str, np.ndarray]:
     return out
 
 
+def summer_course() -> dict | None:
+    """Okno prubehu leta: delka [dny], rozestup uzlu, pocet harmonickych."""
+    p = config()["prazdniny"].get("prubeh")
+    if not p:
+        return None
+    start, end = date(2001, *_md(p["od"])), date(2001, *_md(p["do"]))
+    return {"od": p["od"], "dni": (end - start).days + 1,
+            "uzel_dni": float(p.get("uzel_dni", 10)), "harmonicke": int(p.get("harmonicke", 0))}
+
+
+def summer_position(dates: pd.Series) -> np.ndarray:
+    """Poradi dne v okne prubehu leta (0 = prvni den), mimo okno -1."""
+    c = summer_course()
+    if c is None:
+        return np.full(len(dates), -1.0)
+    m0, d0 = _md(c["od"])
+    pos = {}
+    for d in pd.unique(dates):
+        k = (date(2001, d.month, min(d.day, 28) if d.month == 2 else d.day) - date(2001, m0, d0)).days
+        pos[d] = float(k) if 0 <= k < c["dni"] else -1.0
+    return dates.map(pos).to_numpy(float)
+
+
 def summer_holidays(dates: pd.Series) -> np.ndarray:
     p = config()["prazdniny"]["letni"]
     sel = {d for d in pd.unique(dates) if _in_range(d, p["od"], p["do"])}

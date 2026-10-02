@@ -107,6 +107,8 @@ def _load(with_local_time: bool) -> pd.DataFrame:
         df["most_delka"] = dates.map(runs).fillna(0).astype(int).to_numpy()
         # letni prazdniny (dominantni skolni volno)
         df["prazdniny"] = kalendar.summer_holidays(dates)
+        # poradi dne v okne prubehu leta (config prazdniny.prubeh), mimo okno -1
+        df["leto_den"] = kalendar.summer_position(dates)
         # zvlastni obdobi (Vanoce ...): priznak pro kazdou skupinu z configu
         for name, flag in kalendar.period_flags(dates, holidays).items():
             df["obd_" + name] = flag
