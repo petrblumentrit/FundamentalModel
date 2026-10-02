@@ -395,3 +395,9 @@ Profil: fit tvaru vyhodnocuje model ~150–260× (numerická Jacobiho matice, 13
 - **E** fit tvaru (fáze 0 a 1) z **hodinové agregace** (`etl.hourly`, 4× méně řádků); lineární část a predikce zůstávají 15min. Setrvačnostní filtry počítají s krokem dat (`etl.step_hours`), penalizace hladkosti úrovně a výběr mírných dnů s počtem řádků na den. Ověřeno: parametry tvaru shodné na setiny (T_b 16,70/16,67 °C, τ 81,6/81,6 h), přesnost predikce 7 dní shodná (12,60/12,60; 8,71/8,71), plný fit 68 → 13 s.
 
 Backtest: fáze 0 136 → 57 s, fáze 1 531 → 112 s, fáze 2 ~190 → ~130 s; RMSE / MAPE beze změny (14,48 / 1,67 %, s korekcí 13,09 / 1,49 %), predikce se liší v průměru o 0,13. Zbývající rezerva hlavně ve fázi 2 (matice báze se skládá pro každý den znovu).
+
+### 2026-10-02 — mosty kolem Vánoc (krok 21)
+
+Diagnostika (in-sample): mosty v roce model zvládá (reziduum ~0, obecné členy jednodenní −39 / dvoudenní −13), mosty kolem Vánoc jsou hlubší — reziduum −8 až −23 navíc, celkový efekt ~−35 až −57 na den (mezi běžným mostem a režimem mezi svátky −70; lidé mají volno celý týden). Nová skupina v `config/kalendar.yaml`: `most_vanoce` = mosty ve dnech 20.–23. 12. a 2.–6. 1. (nové volby skupin `rozsahy` a `jen_mosty`), konstanta + 2 harmonické; tyto dny se vyjímají z obecného mostového členu. Pokrývá 23. 12. 2024, 2.–3. 1. 2025, 22.–23. 12. 2025, 2. 1. 2026.
+
+Backtest v8: RMSE 14,30 / MAPE 1,66 % (v7 14,48 / 1,67 %), s korekcí 12,93 / 1,48 %; Vánoce 25,7 → 23,1, mimo Vánoce beze změny. 22. 12. 2025 37 → 16, 23. 12. 35 → 12. **2. 1. 2026 beze změny (32)** — model přestřeluje celý den (748 vs 724, ráno −51) i následující víkend 3.–4. 1. (17–21), takže jde spíš o nižší úroveň po Novém roce (školní prázdniny do 2. 1., čtyřdenní volno od čtvrtka) než o samotný most; vánoční mostový člen se zatím učí jen ze tří dnů 2024/25 (mělčích). Zpřesní se s dalšími Vánoci.

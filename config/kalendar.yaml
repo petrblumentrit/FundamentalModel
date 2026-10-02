@@ -24,8 +24,11 @@ prazdniny:
 # Zvlastni obdobi: kazda skupina je aditivni clen baze s vlastnim dennim
 # tvarem (konstanta + `harmonicke` Fourierovych harmonickych). Skupiny se
 # mohou prekryvat (Silvestr se pricita k mezi_svatky_*).
-#   dny: seznam dat, nebo od/do (rozsah, muze prechazet pres Novy rok)
+#   dny: seznam dat, nebo od/do (rozsah, muze prechazet pres Novy rok), nebo
+#   rozsahy: [[od, do], ...]
 #   dny_v_tydnu: vse (vychozi) | pracovni | vikend  (pracovni = ne vikend, ne svatek)
+#   jen_mosty: true — jen mosty (viz mosty) v danych dnech; z obecneho
+#   mostoveho clenu se pak vyjmou
 obdobi:
   vanoce:
     stedry_den:         {dny: ["12-24"], harmonicke: 8}   # vecere -> propad, TV -> navrat
@@ -35,3 +38,6 @@ obdobi:
     mezi_svatky_vikend: {od: "12-27", do: "12-31", dny_v_tydnu: vikend, harmonicke: 2}
     silvestr:           {dny: ["12-31"], harmonicke: 4}
     novy_rok:           {dny: ["01-01"], harmonicke: 8}   # pulnocni oslavy, dopoledni propad
+    # mosty pred Vanocemi a po Novem roce (napr. 22.-23. 12. 2025, 2. 1. 2026):
+    # hlubsi nez mosty v roce (~-35 az -57 vs -13/-39), mensi nez mezi svatky
+    most_vanoce:        {rozsahy: [["12-20", "12-23"], ["01-02", "01-06"]], jen_mosty: true, harmonicke: 2}

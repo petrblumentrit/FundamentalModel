@@ -107,13 +107,19 @@ def period_groups() -> list[tuple[str, int]]:
 def period_flags(dates: pd.Series, hol: set) -> dict[str, np.ndarray]:
     """Pro kazdou skupinu obdobi priznak po radcich (dates = kalendarni data)."""
     uniq = pd.Series(pd.unique(dates))
+    bridge_days = bridges(hol)
     out = {}
     for groups in (config().get("obdobi") or {}).values():
         for name, g in groups.items():
             sel = set()
             for d in uniq:
-                hit = (d.strftime("%m-%d") in g["dny"]) if "dny" in g else _in_range(d, g["od"], g["do"])
-                if not hit:
+                if "dny" in g:
+                    hit = d.strftime("%m-%d") in g["dny"]
+                elif "rozsahy" in g:
+                    hit = any(_in_range(d, a, b) for a, b in g["rozsahy"])
+                else:
+                    hit = _in_range(d, g["od"], g["do"])
+                if not hit or (g.get("jen_mosty") and d not in bridge_days):
                     continue
                 kind = g.get("dny_v_tydnu", "vse")
                 off = _off(d, hol)
