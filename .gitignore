@@ -11,3 +11,5 @@ simulace/
 Analyza/
 # cache foldu dopredne validace dlouhodobe predikce
 models/dlouhodoba_validace.pkl
+# stav a vystupy provozni predikce (obsahuji data portfolia)
+provoz/

@@ -635,3 +635,20 @@ Horizonty nad 15 h mají jen část vydání (cíle končí dnem D+1), mezi sebo
 **Omezení:** samotný přepočet s čerstvým počasím (bez korekce) model téměř nezlepší (16,7 na 15 min vs 17,7 pro D+1) — archiv nemá předpovědi s kratším předstihem; model s předpovědí počasí v minulých dnech (pro w) je aproximace (filtry běží na předpovědi 9 dní zpět, v provozu by se braly skutečně vydané predikce); koeficienty nezávisí na čase dne vydání.
 
 **Další kroky:** provozní skript (uložené parametry → predikce po příchodu měření); koeficienty podle času dne; vyřazení nepravidelných dnů ze vstupů `vcera` / `tyden`; pásmo nejistoty podle horizontu.
+
+### 2026-10-03 — provozní skript (krok 34)
+
+`predikce.py` (kořen projektu) + `src/operation.py`: jedno spuštění po příchodu měření vydá predikci od konce dat *s*, kam sahá předpověď počasí (nejdál 39 h).
+
+- **Parametry** ve `provoz/parametry.pkl` (mimo repo); přefit jen podle stáří — lineární část, když jsou data přefitu starší než 1 den, tvar po 7 dnech (warm start), bez uloženého stavu celý řetězec. Fituje se ze všech dat do *s* (ne do 09:00 jako v backtestu). `--prefit=tvar|linearni|ne` vynutí nebo zakáže.
+- **Počasí**: do *s* měření, od *s* nejnovější předpověď z archivu (`Analyza/ArchivMeteo.xlsx`, kalibrace osvitu a šera z celé historie, klouzavý bias teploty a větru); cíle bez předpovědi se nevydají.
+- **Korekce**: koeficienty po horizontech z intraday backtestu (`simulace/intraday_predpoved/koeficienty.csv`), vstupy z reziduí modelu a chyby počasí v posledních dnech — provoz tedy nepotřebuje historii vydaných predikcí a je bezstavový až na parametry. Koeficienty se obnoví novým během backtestu (~11 min).
+- **Výstup**: `provoz/predikce.csv` (poslední vydání: složky báze / topení / chlazení / FVE, model, korekce, predikce, horizont) a `provoz/archiv/predikce_RRRRMMDD_HHMM.csv` (všechna vydání, pro pozdější vyhodnocení skutečné přesnosti).
+
+**Časy**: první běh 110 s (celý řetězec), běh s uloženými parametry **~1 s**; denní lineární přefit ~7 s, týdenní tvar ~45 s navíc.
+
+**Ověření** přehráním tří minulých okamžiků (`--konec=`, 20. 7. 12:00, 15. 1. 07:00, 8. 4. 16:30): model se od backtestu liší v průměru o 0,25–0,47 (jiný konec dat přefitu), korekce o 0,26. Jednotlivá vydání jsou podle očekávání rozkolísaná (RMSE do 1 h: 18,0 → 16,8; 6,9 → 4,8; 2,3 → 2,4) — přesnost říká až celoroční backtest (krok 33).
+
+**Omezení:** konec dat = poslední řádek, kde je spotřeba i naměřené meteo (opožděné meteo zdrží i spotřebu); ETL při každé změně vstupních souborů načítá celé CSV znovu (11–24 s) — pro 15min provoz bude potřeba přírůstkové načítání; při přehrávání minulosti archiv obsahuje i předpovědi vydané až po *s* (cíle za koncem D+1).
+
+**Další kroky:** přírůstkové načítání dat; vstup čerstvé předpovědi počasí s kratším předstihem; vyhodnocení archivu vydaných predikcí proti skutečnosti; koeficienty korekce podle času dne; pásmo nejistoty podle horizontu.

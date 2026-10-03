@@ -83,6 +83,22 @@ def _forecast_columns(recent: pd.DataFrame, df: pd.DataFrame, meteo: pd.DataFram
     return out
 
 
+def inputs(v: np.ndarray, i: int, j: np.ndarray) -> dict:
+    """Vstupy korekce z rady v (rezidua nebo chyba pocasi) zname pred pozici i
+    (konec dat) pro cile na pozicich j >= i."""
+    # stejny cas dne v poslednich znamych dnech; hodina koncici casem cile
+    back = j[:, None] - DAY * (((j - i) // DAY + 1)[:, None] + np.arange(TOD_DAYS))
+    tod = np.mean([v[back - q] for q in range(LAST)], axis=0)
+    return {"x1": v[i - LAST:i].mean(), "xden": v[i - DAY:i].mean(),
+            "vcera": tod[:, 0], "tyden": tod.mean(axis=1)}
+
+
+def apply(coefs: pd.DataFrame, x: dict) -> np.ndarray:
+    """Korekce z ulozenych koeficientu (radky = horizonty cilu, sloupce = cleny;
+    explore/intraday.py -> koeficienty.csv) a vstupu x (inputs)."""
+    return sum(coefs[f].to_numpy() * x[f] for f in coefs.columns)
+
+
 def day_issues(df: pd.DataFrame, day: pd.Timestamp, shape: tuple,
                window: int | None = None, meteo: pd.DataFrame | None = None) -> dict:
     """Vsechna vydani s v [D 09:00, D+1 09:00): predikce modelu na horizonty
@@ -128,16 +144,14 @@ def day_issues(df: pd.DataFrame, day: pd.Timestamp, shape: tuple,
         h = j - i
         out["pred"][m, h] = p[j]
         out["skut"][m, h] = y[j]
-        # stejny cas dne v poslednich znamych dnech; hodina koncici casem cile
-        back = j[:, None] - DAY * ((h // DAY + 1)[:, None] + np.arange(TOD_DAYS))
         for v, suf in ((r, ""), (None if pw is None else p - pw, "_w")):
             if v is None:
                 continue
-            out["x1" + suf][m] = v[i - LAST:i].mean()
-            out["xden" + suf][m] = v[i - DAY:i].mean()
-            tod = np.mean([v[back - q] for q in range(LAST)], axis=0)
-            out["vcera" + suf][m, h] = tod[:, 0]
-            out["tyden" + suf][m, h] = tod.mean(axis=1)
+            x = inputs(v, i, j)
+            for k in ("x1", "xden"):
+                out[k + suf][m] = x[k]
+            for k in ("vcera", "tyden"):
+                out[k + suf][m, h] = x[k]
     return out
 
 

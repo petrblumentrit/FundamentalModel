@@ -57,7 +57,17 @@ uv run python explore/ceps_analyza.py     # 19   zatizeni CR (CEPS/ENTSO-E) a pr
 uv run python explore/zatop_test.py       # 25   opozdene zatopeni po teplem obdobi (test na reziduich)
 uv run python explore/dlouhodoba_validace.py  # 31  dopredna validace predikce na rok dopredu
 uv run python explore/dlouhodoba.py --pocasi=scenare  # 32  predikce na rok dopredu od konce dat
+uv run python explore/intraday.py --meteo=predpoved --out=simulace/intraday_predpoved  # 33  intraday backtest (vydani po 15 min)
+uv run python predikce.py                 # 34   provozni predikce od konce dat
 ```
+
+Provozní predikce (`predikce.py`): spouští se po příchodu měření. Parametry
+drží ve `provoz/parametry.pkl` a přefituje je podle stáří (lineární část po
+dni, tvar po týdnu; `--prefit=tvar|linearni|ne`), počasí bere do konce dat
+naměřené a dál z archivu předpovědí, korekci podle horizontu z koeficientů
+intraday backtestu (`--korekce=soubor`). Výstup `provoz/predikce.csv` a
+`provoz/archiv/`; `--konec="2026-07-20 12:00"` přehraje minulý okamžik.
+S uloženými parametry trvá běh ~1 s.
 
 Dlouhodobá predikce (`explore/dlouhodoba.py`): `--pocasi=normal` (jedna
 normálová dráha počasí, čtvrthodinový profil) nebo `--pocasi=scenare` (počasí
@@ -105,3 +115,5 @@ Kalendář (svátky, mosty, prázdniny, vánoční skupiny dnů) se nastavuje v
 | `src/kalendar.py` | kalendář z `config/kalendar.yaml`: svátky, mosty, prázdniny, zvláštní období (Vánoce) |
 | `src/correction.py` | korekce predikce D+1 z chyb dřívějších predikcí (online, reziduová vrstva) |
 | `src/longterm.py` | dlouhodobá predikce: budoucí osa, počasí normál / scénáře, pravidlo trendu, pásmo nejistoty |
+| `src/intraday.py` | intraday predikce: vydání po 15 min, korekce závislá na horizontu (rezidua modelu + chyba předpovědi počasí) |
+| `src/operation.py` | provozní predikce od konce dat: přefit podle stáří parametrů, počasí, model + korekce |
