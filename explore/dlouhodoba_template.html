@@ -188,9 +188,10 @@ function traces() {
     out.push({ x: S.t, y: S.hi, type: "scatter", mode: "lines", line: { width: 0 }, fill: "tonexty", fillcolor: fill, hoverinfo: "skip" });
     GROUPS.push(["band", "Pásmo nejistoty", "--series-1", true, [0, 1]]);
   }
-  out.push({ x: S.t, y: S.h, name: "Skutečnost před rokem", type: "scatter", mode: "lines", connectgaps: false,
+  out.push({ x: S.t, y: S.h, name: "Skutečnost před rokem (posun 364 dní)", type: "scatter", mode: "lines", connectgaps: false,
     line: { color: css("--series-2"), width: coarse ? 1.6 : 1.2 }, hovertemplate: "%{y:.1f}" });
-  GROUPS.push(["h", "Skutečnost před rokem", "--series-2", false, [out.length - 1]]);
+  // porovnani se skutecnosti posunutou o 364 dni (stejne dny v tydnu) je videt hned
+  GROUPS.push(["h", "Skutečnost před rokem", "--series-2", true, [out.length - 1]]);
   // SVG (ne WebGL "scattergl"): WebGL nemusi byt v prohlizeci dostupny
   out.push({ x: S.t, y: S.p, name: "Predikce", type: "scatter", mode: "lines",
     customdata: BAND ? S.lo.map((v, i) => [v, S.hi[i]]) : undefined,

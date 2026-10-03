@@ -9,6 +9,8 @@ Volby:
                                 i vyber `uroven,topeni,fve` a tlumeni `posledni:0.5`
     --dni=365                   delka predikce
     --out=simulace/dlouhodoba   vystupni slozka
+    --parametry=provoz          model z provozniho stavu (provoz/parametry.pkl, vcetne
+                                pevnych hodnot z config/model.yaml) misto models/*_joint.npz
     --no-open                   neotvirat graf v prohlizeci
 
 Model = ulozeny joint fit ze vsech dat (models/*_joint.npz). Vystupy:
@@ -48,9 +50,12 @@ for _a in sys.argv[1:]:
 REF_SHIFT = pd.Timedelta(days=364)   # skutecnost pred rokem, zarovnana na den v tydnu
 
 df = etl.load()
-params = (base.load(base.MODEL_DIR / "base_joint.npz"), heating.load(heating.MODEL_DIR / "heating_joint.npz"),
-          fit.load("cooling_joint.npz", cooling.PARAM_NAMES + ["rmse", "r2"]),
-          fit.load("pv_joint.npz", ["gamma", "span_days", "knot_days", "rmse", "r2"]))
+if "--parametry=provoz" in sys.argv:
+    params = pd.read_pickle(ROOT / "provoz" / "parametry.pkl")["params"]
+else:
+    params = (base.load(base.MODEL_DIR / "base_joint.npz"), heating.load(heating.MODEL_DIR / "heating_joint.npz"),
+              fit.load("cooling_joint.npz", cooling.PARAM_NAMES + ["rmse", "r2"]),
+              fit.load("pv_joint.npz", ["gamma", "span_days", "knot_days", "rmse", "r2"]))
 cutoff = df.index[-1] + longterm.STEP
 f = longterm.forecast(df, params, cutoff, DAYS, weather=WEATHER, trend=TREND)
 scen = longterm.scenario_columns(f)
