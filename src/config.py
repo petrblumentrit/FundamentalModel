@@ -8,7 +8,9 @@ import numpy as np
 import yaml
 from scipy.optimize import least_squares
 
-CONFIG = Path(__file__).resolve().parent.parent / "config" / "model.yaml"
+import workspace
+
+CONFIG = workspace.config_file("model.yaml")
 SECTIONS = ("topeni", "chlazeni", "fve")   # oddily s fyzikalnimi parametry
 
 

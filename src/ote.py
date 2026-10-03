@@ -15,9 +15,11 @@ from pathlib import Path
 
 import pandas as pd
 
+import workspace
+
 from etl import TZ
 
-DIR = Path(__file__).resolve().parent.parent / "Analyza"
+DIR = workspace.ANALYZA
 
 
 def _read(path: Path, columns: dict[int, str]) -> pd.DataFrame:

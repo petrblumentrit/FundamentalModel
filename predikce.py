@@ -11,6 +11,8 @@ pocasi (nejdal 39 h), a ulozi ji. Volby:
                                     simulace/intraday_predpoved/koeficienty.csv); --korekce= vypne
     --konec="2026-07-20 12:00"      prehrani minulosti: data jen pred timto mistnim casem
     --out=provoz                    slozka stavu a vystupu
+    --projekt=cesta                 pracovni slozka s jinou sadou dat (src/workspace.py);
+                                    cesty v --out a --korekce se berou od ni
     --bez-grafu                     nevytvaret vysvetleni.html (~5 MB, plotly.js v souboru)
     --otevrit                       otevrit graf v prohlizeci
 
@@ -32,26 +34,29 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
+import workspace
 import etl
 import explain
 import operation
 
-OUT = ROOT / "provoz"
-COEFS = ROOT / "simulace" / "intraday_predpoved" / "koeficienty.csv"
+OUT = workspace.ROOT / "provoz"
+COEFS = workspace.ROOT / "simulace" / "intraday_predpoved" / "koeficienty.csv"
 FORCE, END = None, None
 GRAPH = "--bez-grafu" not in sys.argv
 OPEN = "--otevrit" in sys.argv
 for _a in sys.argv[1:]:
     if _a.startswith("--out="):
-        OUT = ROOT / _a.split("=", 1)[1]
+        OUT = workspace.ROOT / _a.split("=", 1)[1]
     if _a.startswith("--prefit="):
         FORCE = _a.split("=", 1)[1]
     if _a.startswith("--korekce="):
-        COEFS = ROOT / _a.split("=", 1)[1] if _a.split("=", 1)[1] else None
+        COEFS = workspace.ROOT / _a.split("=", 1)[1] if _a.split("=", 1)[1] else None
     if _a.startswith("--konec="):
         END = pd.Timestamp(_a.split("=", 1)[1]).tz_localize(etl.TZ).tz_convert("UTC")
 
 t0 = time.time()
+if workspace.describe():
+    print(workspace.describe())
 old = etl.previous()
 df = etl.load()
 if END is not None:

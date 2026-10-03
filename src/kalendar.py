@@ -11,7 +11,9 @@ import numpy as np
 import pandas as pd
 import yaml
 
-CONFIG = Path(__file__).resolve().parent.parent / "config" / "kalendar.yaml"
+import workspace
+
+CONFIG = workspace.config_file("kalendar.yaml")
 
 
 @lru_cache(maxsize=1)

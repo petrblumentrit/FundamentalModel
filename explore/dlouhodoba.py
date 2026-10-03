@@ -29,6 +29,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+import workspace
 import base
 import cooling
 import etl
@@ -36,11 +37,11 @@ import fit
 import heating
 import longterm
 
-OUT = ROOT / "simulace" / "dlouhodoba"
+OUT = workspace.ROOT / "simulace" / "dlouhodoba"
 WEATHER, TREND, DAYS = "normal", "posledni", 365
 for _a in sys.argv[1:]:
     if _a.startswith("--out="):
-        OUT = ROOT / _a.split("=", 1)[1]
+        OUT = workspace.ROOT / _a.split("=", 1)[1]
     if _a.startswith("--pocasi="):
         WEATHER = _a.split("=", 1)[1]
     if _a.startswith("--trend="):
@@ -51,7 +52,7 @@ REF_SHIFT = pd.Timedelta(days=364)   # skutecnost pred rokem, zarovnana na den v
 
 df = etl.load()
 if "--parametry=provoz" in sys.argv:
-    params = pd.read_pickle(ROOT / "provoz" / "parametry.pkl")["params"]
+    params = pd.read_pickle(workspace.ROOT / "provoz" / "parametry.pkl")["params"]
 else:
     params = (base.load(base.MODEL_DIR / "base_joint.npz"), heating.load(heating.MODEL_DIR / "heating_joint.npz"),
               fit.load("cooling_joint.npz", cooling.PARAM_NAMES + ["rmse", "r2"]),

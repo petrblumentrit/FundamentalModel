@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 
 import config
+import workspace
 
 _C = config.model()["fve"]                   # hodnoty v config/model.yaml
 KNOT_DAYS = float(_C["kapacita_uzel_dni"])   # rozestup rampovych prirustku kapacity
@@ -25,7 +26,7 @@ T_REF = _C["referencni_teplota"]             # referencni teplota clanku pro eta
 PARAM_NAMES = ["gamma"]
 LOWER, UPPER, X0 = config.bounds("fve", PARAM_NAMES)
 
-MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
+MODEL_DIR = workspace.MODELS
 
 
 def _days(df: pd.DataFrame, t0: pd.Timestamp) -> np.ndarray:

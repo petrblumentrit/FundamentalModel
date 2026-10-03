@@ -51,6 +51,7 @@ from scipy.interpolate import BSpline
 
 import config
 import kalendar
+import workspace
 from etl import TZ, step_hours
 
 _C = config.model()["baze"]              # hodnoty v config/model.yaml
@@ -77,7 +78,7 @@ GLOOM_KNOT = _C["sero"]["uzel"]          # [h] rozestup uzlu aktivity pri seru
 
 SUMMER = kalendar.summer_course()   # okno prubehu leta (None = clen vypnut)
 
-MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
+MODEL_DIR = workspace.MODELS
 
 
 def _fourier(tod: np.ndarray, k: int) -> np.ndarray:

@@ -37,6 +37,7 @@ from etl import step_hours
 
 import config
 import pv
+import workspace
 
 _C = config.model()["topeni"]            # hodnoty v config/model.yaml
 K_TOD = _C["harmonicke"]                 # harmonickych v k(cas dne)
@@ -55,7 +56,7 @@ LOWER, UPPER, X0 = config.bounds("topeni", PARAM_NAMES)
 # validace mimo vzorek (T_b 17,5-18, s 1,8-2,9, tau 63-87 h).
 PRIOR = config.priors("topeni")
 
-MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
+MODEL_DIR = workspace.MODELS
 
 
 def softplus(z: np.ndarray, s: float) -> np.ndarray:

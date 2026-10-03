@@ -17,17 +17,18 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+import workspace
 import etl
 import explain
 import heating
 import operation
 
-OUT = ROOT / "dokumentace"
+OUT = workspace.ROOT / "dokumentace"
 BACKTESTS = (("Naměřené počasí (dokonalá předpověď)", "v12"), ("Předpověď počasí z archivu", "v12_predpoved"))
 INTRADAY = (("naměřené počasí", "intraday"), ("předpověď počasí", "intraday_predpoved"))
 
 df = etl.load()
-state = pd.read_pickle(ROOT / "provoz" / "parametry.pkl")
+state = pd.read_pickle(workspace.ROOT / "provoz" / "parametry.pkl")
 params = state["params"]
 bp, hp, cp, pp = params
 loc = df.index.tz_convert(etl.TZ)
@@ -69,7 +70,7 @@ def inertia() -> dict:
 def backtests() -> list:
     out = []
     for label, name in BACKTESTS:
-        path = ROOT / "simulace" / name / "predikce_D1.csv"
+        path = workspace.ROOT / "simulace" / name / "predikce_D1.csv"
         if not path.exists():
             continue
         d = pd.read_csv(path, sep=";", decimal=",")
@@ -86,7 +87,7 @@ def backtests() -> list:
 def horizons() -> dict | None:
     out = {}
     for label, name in INTRADAY:
-        path = ROOT / "simulace" / name / "horizonty.csv"
+        path = workspace.ROOT / "simulace" / name / "horizonty.csv"
         if not path.exists():
             return None
         h = pd.read_csv(path, sep=";", decimal=",")

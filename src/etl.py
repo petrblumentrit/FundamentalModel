@@ -5,7 +5,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "Data"
+import workspace
+
+DATA_DIR = workspace.DATA
 TZ = "Europe/Prague"
 READ_RETRIES = 4   # pokusu o nacteni, kdyz se vstupni soubor pri cteni meni
 READ_WAIT = 2.0    # [s] cekani mezi pokusy
@@ -14,7 +16,7 @@ SRC_DIR = Path(__file__).resolve().parent
 # soubory, konfigurace kalendare ani kod, ktery je zpracovava
 CACHE = DATA_DIR / ".etl_cache.pkl"
 _CACHE_DEPS = [DATA_DIR / "baseload.csv", DATA_DIR / "Meteo15.csv",
-               SRC_DIR.parent / "config" / "kalendar.yaml", SRC_DIR.parent / "config" / "model.yaml",
+               workspace.config_file("kalendar.yaml"), workspace.config_file("model.yaml"),
                SRC_DIR / "etl.py", SRC_DIR / "kalendar.py", SRC_DIR / "sun.py"]
 
 
@@ -113,7 +115,7 @@ def revisions(old: pd.DataFrame | None, new: pd.DataFrame, tol: float = 1e-6) ->
     kde se spotreba nebo meteo lisi; sloupce = zmena (nova - stara)."""
     cols = ["baseload", "temp", "sun", "wind"]
     if old is None:
-        return pd.DataFrame(columns=cols)
+        return pd.DataFrame(columns=cols, index=pd.DatetimeIndex([], tz="UTC"))
     idx = old.index.intersection(new.index)
     d = new.loc[idx, cols] - old.loc[idx, cols]
     return d[(d.abs() > tol).any(axis=1)]

@@ -711,3 +711,15 @@ Tabulka parametrů ukázala `gamma` na horní mezi 0,01 (fyzikálně ~0,004 na �
 **Závěr:** fyzikální hodnota 0,004 stojí 0,002 RMSE; držet ji jako `pevna` je čistší než odhad na mezi (špička FVE pak vychází 57,6 místo 56,1).
 
 **Provedeno:** `gamma` drzena na 0,004 (`pevna` v `config/model.yaml`); provozni predikce se zmenila v prumeru o desetiny jednotky.
+
+### 2026-10-03 — přepínač pracovní složky (krok 40)
+
+Příprava na nezávislý simulátor portfolia (samostatný projekt, bude dodávat CSV ve formátu vstupních dat): model musí jít spustit nad jinou sadou dat, aniž přepíše skutečná.
+
+`src/workspace.py`: pracovní složka = kde leží `Data/`, `Analyza/`, `config/`, `provoz/`, `simulace/`, `models/`, `dokumentace/`. Výchozí je kořen repozitáře (chování beze změny); jinou vybere `--projekt=cesta` u kteréhokoli skriptu nebo proměnná prostředí `MODEL_PROJEKT`. Volba se dědí do paralelních procesů zpětných simulací. Konfigurace (`model.yaml`, `kalendar.yaml`) se bere z pracovní složky, a když v ní není, z repozitáře; `predikce.py` vypíše, která platí. Cesty v `--out` a `--korekce` se berou od pracovní složky. Kód a šablony grafů zůstávají v repozitáři.
+
+Archiv předpovědí počasí jde nově dodat i jako `Analyza/ArchivMeteo.csv` (formát vstupních dat: `;`, desetinná čárka, místní čas; sloupce čas, teplota, oblačnost, vítr) — simulátor nemusí psát xlsx. Ověřeno, že CSV dá stejný archiv jako xlsx.
+
+Ověřeno na kopii dat v oddělené složce: první běh odhadne model od nuly (100 s), výstupy i mezipaměť dat vznikají v pracovní složce, `provoz/` v repozitáři zůstává nedotčený, paralelní procesy čtou data z pracovní složky. Zkouška odhalila chybu prvního spuštění bez mezipaměti dat (`etl.revisions` vracelo prázdný rámec bez časového indexu a `predikce.py` spadl) — opraveno; týkala se i čisté instalace v repozitáři.
+
+**Omezení:** starší průzkumné skripty (`explore/*_fit.py`, `*_test.py`, `*_analyza.py`) ukládají obrázky dál do `explore/` v repozitáři; `ceps_analyza.py` čte výsledky simulací z repozitáře. V nové pracovní složce chybí koeficienty korekce, dokud se v ní nepustí `explore/intraday.py --meteo=predpoved --out=simulace/intraday_predpoved` — do té doby se predikce vydává bez korekce.

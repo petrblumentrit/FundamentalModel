@@ -22,6 +22,7 @@ import pandas as pd
 from etl import step_hours
 
 import config
+import workspace
 from heating import softplus
 
 _C = config.model()["chlazeni"]          # hodnoty v config/model.yaml
@@ -36,7 +37,7 @@ LOWER, UPPER, X0 = config.bounds("chlazeni", PARAM_NAMES)
 # slaby prior pro joint fit (viz heating.PRIOR); validace: T_bc 17,1-18,7, s_c 2,1-2,4
 PRIOR = config.priors("chlazeni")
 
-MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
+MODEL_DIR = workspace.MODELS
 
 
 def t_star(df: pd.DataFrame, a_c: float, w_c: float, tau_c: float) -> np.ndarray:

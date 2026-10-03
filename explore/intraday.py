@@ -22,6 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+import workspace
 
 # sdilene pomucky simulace D+1 (pocet workeru, predpoved pocasi na 15min ose);
 # modul se jmenuje stejne jako src/backtest.py, proto pod jinym jmenem
@@ -29,10 +30,10 @@ _spec = importlib.util.spec_from_file_location("backtest_d1", Path(__file__).wit
 d1 = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(d1)
 
-OUT = ROOT / "simulace" / "intraday"
+OUT = workspace.ROOT / "simulace" / "intraday"
 for _a in sys.argv:
     if _a.startswith("--out="):
-        OUT = ROOT / _a.split("=", 1)[1]
+        OUT = workspace.ROOT / _a.split("=", 1)[1]
 SHOW = (0.25, 0.5, 1, 2, 3, 6, 12, 24, 36)   # [h] horizonty v tabulce
 
 _df = None

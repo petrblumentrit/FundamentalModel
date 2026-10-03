@@ -36,9 +36,11 @@ import pandas as pd
 from scipy.interpolate import RegularGridInterpolator
 
 import sun
+import workspace
 from etl import TZ
+from etl import _timestamps as etl_timestamps
 
-FILE = Path(__file__).resolve().parent.parent / "Analyza" / "ArchivMeteo.xlsx"
+FILE = workspace.ANALYZA / "ArchivMeteo.xlsx"   # nebo ArchivMeteo.csv vedle nej (ma prednost xlsx)
 KT_BINS = np.arange(0, 101, 10)        # hrany binu oblacnosti [%]
 EL_BINS = np.array([0.0, 0.1, 0.2, 0.3, 0.45, 0.6, 0.75, 0.9])   # hrany binu sin(vysky slunce)
 KT_QUANTILES = np.arange(0.05, 1.0, 0.1)   # kvantily kt v binu (stredy decilu)
@@ -49,11 +51,21 @@ BIAS_COLS = ("temp", "wind")
 
 
 def load_archive() -> pd.DataFrame:
-    """Hodinova predpoved na UTC ose (hodiny po rade od mistni pulnoci)."""
-    a = pd.read_excel(FILE)
-    a.columns = ["ts", "temp", "obl", "wind"]
-    a = a.dropna(subset=["temp"])
-    ts = pd.to_datetime(a["ts"])
+    """Hodinova predpoved na UTC ose (hodiny po rade od mistni pulnoci).
+
+    Zdroj: ArchivMeteo.xlsx, nebo ArchivMeteo.csv ve formatu vstupnich dat
+    (oddelovac `;`, desetinna carka, mistni cas) se sloupci cas, teplota,
+    oblacnost [%], rychlost vetru v tomto poradi."""
+    if FILE.exists():
+        a = pd.read_excel(FILE)
+        a.columns = ["ts", "temp", "obl", "wind"]
+        a = a.dropna(subset=["temp"])
+        ts = pd.to_datetime(a["ts"])
+    else:
+        a = pd.read_csv(FILE.with_suffix(".csv"), sep=";", decimal=",")
+        a.columns = ["ts", "temp", "obl", "wind"]
+        a = a.dropna(subset=["temp"])
+        ts = etl_timestamps(a["ts"])
     day = ts.dt.normalize()
     utc = day.dt.tz_localize(TZ).dt.tz_convert("UTC") + pd.to_timedelta(a.groupby(day).cumcount(), unit="h")
     out = a[["temp", "obl", "wind"]].astype(float)

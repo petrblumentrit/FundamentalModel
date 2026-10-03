@@ -23,7 +23,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-OUT = ROOT / "simulace"
+import workspace
+OUT = workspace.ROOT / "simulace"
 # --out=slozka: jiny vystupni adresar (napr. pro srovnavaci beh vedle hlavniho)
 # --okno=dny: trenink jen z poslednich N dni (svatky a jejich okoli z cele historie)
 # --prior=vaha: vaha prioru na tvar topne/chladici krivky (fit.PRIOR_WEIGHT; 0 = bez)
@@ -45,7 +46,7 @@ for _a in sys.argv:
     if _a.startswith("--bias="):
         BIAS = tuple(x for x in _a.split("=", 1)[1].split(",") if x)
     if _a.startswith("--out="):
-        OUT = ROOT / _a.split("=", 1)[1]
+        OUT = workspace.ROOT / _a.split("=", 1)[1]
     if _a.startswith("--okno="):
         WINDOW = int(_a.split("=", 1)[1])
     if _a.startswith("--prior="):

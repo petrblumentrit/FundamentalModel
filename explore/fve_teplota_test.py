@@ -22,6 +22,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+import workspace
 import backtest
 import config
 import etl
@@ -35,7 +36,7 @@ S_BINS = [100, 300, 600, 2000]
 
 dh = etl.hourly(etl.load())
 mask = np.ones(len(dh), bool)
-warm = pd.read_pickle(ROOT / "provoz" / "parametry.pkl")["params"]
+warm = pd.read_pickle(workspace.ROOT / "provoz" / "parametry.pkl")["params"]
 spec = config.model()["fve"]["parametry"]["gamma"]
 y = dh["baseload"].to_numpy()
 end = pd.DatetimeIndex([dh.index[-1]])

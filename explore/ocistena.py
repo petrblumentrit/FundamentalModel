@@ -18,17 +18,18 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
+import workspace
 import cooling
 import etl
 import heating
 
-OUT = ROOT / "simulace" / "ocistena"
+OUT = workspace.ROOT / "simulace" / "ocistena"
 for _a in sys.argv[1:]:
     if _a.startswith("--out="):
-        OUT = ROOT / _a.split("=", 1)[1]
+        OUT = workspace.ROOT / _a.split("=", 1)[1]
 
 df = etl.load()
-state = pd.read_pickle(ROOT / "provoz" / "parametry.pkl")
+state = pd.read_pickle(workspace.ROOT / "provoz" / "parametry.pkl")
 _, hp, cp, _ = state["params"]
 f = pd.DataFrame({"skutecnost": df["baseload"], "topeni": heating.predict(df, hp),
                   "chlazeni": cooling.predict(df, cp)}, index=df.index)
