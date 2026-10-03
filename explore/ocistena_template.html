@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spotřeba bez topení a chlazení</title>
+<script>/*__PLOTLY__*/</script>
+<style>
+:root {
+  color-scheme: light;
+  --surface: #fcfcfb; --surface-2: #f3f2ef; --border: #e1e0d9;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+  --grid: #e1e0d9; --baseline: #c3c2b7;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface: #1a1a19; --surface-2: #242423; --border: #383835;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #333331; --baseline: #52514e;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1a1a19; --surface-2: #242423; --border: #383835;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+  --grid: #333331; --baseline: #52514e;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface); color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1400px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 20px; margin: 0 0 4px; font-weight: 600; }
+h2 { font-size: 15px; font-weight: 600; margin: 24px 0 8px; }
+.sub { color: var(--text-secondary); margin: 0 0 20px; max-width: 950px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.tile { background: var(--surface-2); border-radius: 8px; padding: 12px 14px; }
+.tile .k { color: var(--text-secondary); font-size: 12px; }
+.tile .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .m { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.controls span { color: var(--text-secondary); font-size: 12px; margin-right: 4px; }
+button { font: inherit; font-size: 13px; color: var(--text-primary); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--text-muted); }
+button[aria-pressed="true"] { border-color: var(--text-primary); }
+button:disabled { opacity: 0.4; cursor: default; }
+.controls .window { margin-left: 8px; color: var(--text-primary); font-size: 13px; font-variant-numeric: tabular-nums; }
+#chart { width: 100%; height: 560px; }
+@media (max-width: 800px) { #chart { height: 460px; } }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+th, td { padding: 5px 8px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { color: var(--text-secondary); font-weight: 500; }
+th:first-child, td:first-child { text-align: left; }
+.wrap { overflow-x: auto; }
+.note { color: var(--text-muted); font-size: 12px; margin-top: 16px; max-width: 1000px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Spotřeba bez topení a chlazení</h1>
+  <p class="sub" id="sub"></p>
+  <div class="tiles" id="tiles"></div>
+  <div class="controls" id="ranges"><span>Rozsah:</span></div>
+  <div class="controls">
+    <button type="button" id="prev" title="Posunout okno zpět o jeho šířku (šipka vlevo)">◀ Předchozí</button>
+    <button type="button" id="next" title="Posunout okno vpřed o jeho šířku (šipka vpravo)">Další ▶</button>
+    <span id="window" class="window"></span>
+  </div>
+  <div id="chart"></div>
+  <div class="wrap"><h2>Roční průměry</h2><table id="yearly"></table></div>
+  <div class="wrap"><h2>Měsíční průměry</h2><table id="monthly"></table></div>
+  <p class="note" id="note"></p>
+</main>
+<script>
+const D = /*__DATA__*/null;
+const M = D.meta;
+// siroky zaber kresli denni prumery, po priblizeni pod COARSE_DAYS dni ctvrthodiny
+// (jen vyrez kolem okna — cela historie ma 160 tisic bodu na caru)
+const COARSE_DAYS = 45;
+const fmt = (v, d = 1) => v === null || v === undefined ? "–"
+  : v.toLocaleString("cs-CZ", { minimumFractionDigits: d, maximumFractionDigits: d });
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+// rada: klic, popisek, barva, sirka cary
+const SERIES = [
+  ["skutecnost", "Skutečná spotřeba", "--text-primary", 1.5],
+  ["ocistena", "Bez topení a chlazení", "--series-1", 2],
+  ["topeni", "Topení", "--series-2", 1.5],
+  ["chlazeni", "Chlazení", "--series-3", 1.5],
+];
+
+document.getElementById("sub").textContent =
+  `Historie ${M.od} až ${M.do}. Od skutečné spotřeby je odečten příspěvek topení a chlazení podle modelu; `
+  + `výroba FVE a ostatní složky zůstávají. Topí se pod ${fmt(M.t_b)} °C, chladí nad ${fmt(M.t_bc)} °C (se setrvačností budov).`;
+const tiles = [
+  ["Průměrná spotřeba", fmt(M.skutecnost), "celé období"],
+  ["Bez topení a chlazení", fmt(M.ocistena), `${fmt(100 * M.ocistena / M.skutecnost)} % spotřeby`],
+  ["Topení", fmt(M.topeni), `${fmt(M.podil_topeni)} % spotřeby`],
+  ["Chlazení", fmt(M.chlazeni), `${fmt(M.podil_chlazeni)} % spotřeby`],
+];
+const tEl = document.getElementById("tiles");
+for (const [k, v, m] of tiles) {
+  const d = document.createElement("div"); d.className = "tile";
+  for (const [c, x] of [["k", k], ["v", v], ["m", m]]) { const e = document.createElement("div"); e.className = c; e.textContent = x; d.append(e); }
+  tEl.append(d);
+}
+function table(id, rows, first, full) {
+  const el = document.getElementById(id);
+  const cols = [[first, r => r.obdobi + (r.dni < full ? ` (${fmt(r.dni, 0)} dní)` : "")], ["Skutečná spotřeba", r => fmt(r.skutecnost)],
+    ["Bez topení a chlazení", r => fmt(r.ocistena)], ["Topení", r => fmt(r.topeni)], ["Chlazení", r => fmt(r.chlazeni)],
+    ["Podíl topení %", r => fmt(r.podil_topeni)], ["Podíl chlazení %", r => fmt(r.podil_chlazeni)]];
+  const head = el.createTHead().insertRow();
+  for (const [name] of cols) { const th = document.createElement("th"); th.textContent = name; head.append(th); }
+  const tb = el.createTBody();
+  for (const r of rows) { const tr = tb.insertRow(); for (const [, f] of cols) tr.insertCell().textContent = f(r); }
+}
+table("yearly", D.yearly, "Rok", 360);
+table("monthly", D.monthly, "Měsíc", 27);
+document.getElementById("note").textContent =
+  "Topení a chlazení jsou příspěvky podle modelu odhadnutého ze všech dat, ne měření; chyba modelu proto zůstává v křivce bez topení a chlazení. "
+  + `Při záběru nad ${COARSE_DAYS} dní se kreslí denní průměry, po přiblížení čtvrthodinové hodnoty. `
+  + "Tahem myší přiblížíte, dvojklik vrátí zvolený rozsah, ◀ / ▶ i šipky na klávesnici posunou okno o jeho šířku, klik do legendy řadu skryje.";
+
+const parse = s => new Date(s.length <= 10 ? s + "T00:00" : s.replace(" ", "T"));
+const p2 = x => String(x).padStart(2, "0");
+const fmtT = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+const addDays = (s, n) => { const d = parse(s); d.setDate(d.getDate() + n); return fmtT(d); };
+const startX = D.t[0].slice(0, 10) + " 00:00";
+const endX = addDays(D.t[D.t.length - 1].slice(0, 10) + " 00:00", 1);
+let current = [startX, endX], view = current.slice();
+const spanDays = r => (parse(String(r[1])) - parse(String(r[0]))) / 864e5;
+let coarse = spanDays(view) > COARSE_DAYS;
+let loaded = null;            // [od, do] vyrezu ctvrthodin, ktery je v grafu
+const vis = {};               // skryte rady (klik do legendy) preziji prekresleni
+const lowerBound = (arr, x) => { let a = 0, b = arr.length; while (a < b) { const m = (a + b) >> 1; if (arr[m] < x) a = m + 1; else b = m; } return a; };
+
+function layout() {
+  const ink = css("--text-secondary"), muted = css("--text-muted"), grid = css("--grid"), base = css("--baseline");
+  const ax = { gridcolor: grid, linecolor: base, zerolinecolor: base, tickfont: { color: muted, size: 11 },
+    title: { font: { color: ink, size: 12 } } };
+  return {
+    paper_bgcolor: css("--surface"), plot_bgcolor: css("--surface"),
+    font: { family: "system-ui, -apple-system, Segoe UI, sans-serif", color: css("--text-primary") },
+    margin: { l: 56, r: 16, t: 8, b: 40 }, hovermode: "x unified",
+    legend: { orientation: "h", traceorder: "normal", y: 1.02, yanchor: "bottom", x: 0, font: { color: ink, size: 12 } },
+    hoverlabel: { bgcolor: css("--surface-2"), bordercolor: css("--border"), font: { color: css("--text-primary") } },
+    xaxis: { ...ax, range: view, showspikes: true, spikemode: "across", spikethickness: 1, spikecolor: muted, spikedash: "solid",
+      hoverformat: coarse ? "%d.%m.%Y (denní průměr)" : "%d.%m.%Y %H:%M",
+      tickformatstops: [{ dtickrange: [null, 86400000], value: "%H:%M<br>%d.%m.%Y" }, { dtickrange: [86400000, null], value: "%d.%m.<br>%Y" }] },
+    yaxis: { ...ax, title: { ...ax.title, text: "Spotřeba" }, rangemode: "tozero", fixedrange: true },
+  };
+}
+function traces() {
+  let S = D.d, a = 0, b = D.d.t.length;
+  if (!coarse) {
+    // vyrez = okno rozsirene o jeho sirku na obe strany
+    const w = spanDays(view);
+    loaded = [addDays(view[0].slice(0, 16), -Math.ceil(w)), addDays(view[1].slice(0, 16), Math.ceil(w))];
+    S = D; a = lowerBound(D.t, loaded[0]); b = lowerBound(D.t, loaded[1]);
+  } else loaded = null;
+  return SERIES.map(([key, name, col, width]) => ({ x: S.t.slice(a, b), y: S[key].slice(a, b), name, type: "scatter", mode: "lines",
+    line: { color: css(col), width }, hovertemplate: "%{y:.1f}", visible: vis[name] ?? true }));
+}
+const el = document.getElementById("chart");
+Plotly.newPlot(el, traces(), layout(), { responsive: true, displaylogo: false, locale: "cs",
+  modeBarButtonsToRemove: ["select2d", "lasso2d", "autoScale2d"], doubleClick: false });
+el.on("plotly_restyle", () => el.data.forEach(t => { vis[t.name] = t.visible ?? true; }));
+
+function setRange(r) { current = r; Plotly.relayout(el, { "xaxis.range": r }); }
+el.on("plotly_doubleclick", () => setRange(current));
+el.on("plotly_relayout", ev => {
+  let r = null;
+  if (ev["xaxis.range[0]"]) r = [ev["xaxis.range[0]"], ev["xaxis.range[1]"]];
+  else if (ev["xaxis.range"]) r = ev["xaxis.range"];
+  else if (ev["xaxis.autorange"]) r = [startX, endX];
+  if (!r) return;
+  view = [String(r[0]), String(r[1])];
+  const c = spanDays(view) > COARSE_DAYS;
+  if (c !== coarse || (!c && (view[0] < loaded[0] || view[1] > loaded[1]))) {
+    coarse = c;
+    Plotly.react(el, traces(), layout());
+  }
+  showWindow();
+});
+function shift(dir) {
+  const a = parse(view[0]), b = parse(view[1]);
+  const days = (b - a) / 864e5, whole = Math.round(days);
+  let na, nb;
+  if (whole >= 1 && Math.abs(days - whole) < 0.05) {
+    na = parse(view[0]); na.setDate(na.getDate() + dir * whole);
+    nb = parse(view[1]); nb.setDate(nb.getDate() + dir * whole);
+  } else { na = new Date(+a + dir * (b - a)); nb = new Date(+b + dir * (b - a)); }
+  const lo = parse(startX), hi = parse(endX);
+  if (nb > hi) { na = new Date(+hi - (b - a)); nb = hi; }
+  if (na < lo) { na = lo; nb = new Date(+lo + (b - a)); }
+  if (+na === +a) return;
+  setRange([fmtT(na), fmtT(nb)]);
+}
+function showWindow() {
+  const a = parse(view[0]), b = new Date(+parse(view[1]) - 1);
+  const d = x => `${p2(x.getDate())}.${p2(x.getMonth() + 1)}.${x.getFullYear()}`;
+  document.getElementById("window").textContent = (d(a) === d(b) ? d(a) : `${d(a)} – ${d(b)}`) + (coarse ? " · denní průměry" : " · čtvrthodiny");
+  document.getElementById("prev").disabled = a <= parse(startX);
+  document.getElementById("next").disabled = +b + 1 >= +parse(endX);
+}
+document.getElementById("prev").onclick = () => shift(-1);
+document.getElementById("next").onclick = () => shift(1);
+document.addEventListener("keydown", e => {
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  if (e.key === "ArrowLeft") { shift(-1); e.preventDefault(); }
+  if (e.key === "ArrowRight") { shift(1); e.preventDefault(); }
+});
+showWindow();
+const rEl = document.getElementById("ranges"), btns = [];
+// rozsahy se berou od konce historie (posledni tyden, mesic ...)
+for (const [label, n] of [["Poslední týden", 7], ["Poslední měsíc", 30], ["Poslední rok", 365], ["Celá historie", null]]) {
+  const b = document.createElement("button"); b.textContent = label; b.type = "button";
+  b.setAttribute("aria-pressed", n === null ? "true" : "false");
+  b.onclick = () => {
+    btns.forEach(x => x.setAttribute("aria-pressed", "false")); b.setAttribute("aria-pressed", "true");
+    setRange(n ? [addDays(endX, -n), endX] : [startX, endX]);
+  };
+  btns.push(b); rEl.append(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => Plotly.react(el, traces(), layout()));
+</script>
+</body>
+</html>
