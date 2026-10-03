@@ -34,7 +34,6 @@ import numpy as np
 import pandas as pd
 
 from etl import step_hours
-from scipy.optimize import least_squares
 
 import config
 import pv
@@ -112,10 +111,9 @@ def fit(df: pd.DataFrame, resid: np.ndarray, mask: np.ndarray) -> dict:
     def outer(theta):
         return inner(theta)[1]
 
-    sol = least_squares(outer, X0, bounds=(LOWER, UPPER), diff_step=1e-3,
-                        x_scale=UPPER - LOWER, verbose=0)
-    k_coef, res = inner(sol.x)
-    out = dict(zip(PARAM_NAMES, sol.x))
+    x = config.solve(outer, X0, LOWER, UPPER, config.fixed("topeni", PARAM_NAMES), verbose=0)
+    k_coef, res = inner(x)
+    out = dict(zip(PARAM_NAMES, x))
     out.update({
         "k_coef": k_coef, "k_tod": K_TOD,
         "rmse": float(np.sqrt(np.mean(res**2))),

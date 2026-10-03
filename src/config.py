@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import yaml
+from scipy.optimize import least_squares
 
 CONFIG = Path(__file__).resolve().parent.parent / "config" / "model.yaml"
 SECTIONS = ("topeni", "chlazeni", "fve")   # oddily s fyzikalnimi parametry
@@ -38,3 +39,27 @@ def fixed(section: str, names: list[str]) -> np.ndarray:
     """Pevne hodnoty v poradi names; NaN = parametr se odhaduje."""
     sp = spec(section)
     return np.array([np.nan if sp[n].get("pevna") is None else float(sp[n]["pevna"]) for n in names])
+
+
+def pinned(x0: np.ndarray, fix: np.ndarray) -> np.ndarray:
+    """x0 s pevnymi hodnotami na mistech, kde jsou zadane."""
+    return np.where(np.isnan(fix), x0, fix)
+
+
+def solve(fun, x0: np.ndarray, lower: np.ndarray, upper: np.ndarray, fix: np.ndarray, **kw) -> np.ndarray:
+    """Nelinearni LS jen pres volne parametry; pevne (fix != NaN) se drzi na
+    zadane hodnote (i mimo meze — je to vedome rozhodnuti v konfiguraci).
+    fun dostava vzdy uplny vektor parametru."""
+    free = np.isnan(fix)
+    x = pinned(np.asarray(x0, float), fix)
+    if not free.any():
+        return x
+
+    def inner(z):
+        q = x.copy()
+        q[free] = z
+        return fun(q)
+
+    x[free] = least_squares(inner, x[free], bounds=(lower[free], upper[free]), diff_step=1e-3,
+                            x_scale=(upper - lower)[free], **kw).x
+    return x

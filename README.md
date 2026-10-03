@@ -71,6 +71,17 @@ S uloženými parametry trvá běh ~1 s, po aktualizaci vstupních CSV ~2,5 s
 (soubory se čtou celé, takže zpětně zpřesněná měření se projeví sama;
 skript vypíše, kolik intervalů se od minulého spuštění změnilo).
 
+Transparentnost výpočtu:
+- `config/model.yaml` — ručně zvolené konstanty a u fyzikálních parametrů
+  popis, meze, start, prior a volitelně `pevna` (parametr se drží na zadané
+  hodnotě ve všech fitech);
+- `provoz/parametry.yaml` — aktuálně odhadnuté fyzikální parametry; ruční
+  přepsání hodnoty se při příštím spuštění převezme a lineární část se
+  přefituje (vydrží do příštího přefitu tvaru, trvale přes `pevna`);
+- `provoz/rozklad.csv` a `provoz/vysvetleni.html` — rozklad predikce na složky
+  (rozvrh a kalendář, osvětlení, šero, topení, chlazení, FVE, korekce),
+  spotřeba očištěná o počasí a křivky modelu; `--bez-grafu`, `--otevrit`.
+
 Dlouhodobá predikce (`explore/dlouhodoba.py`): `--pocasi=normal` (jedna
 normálová dráha počasí, čtvrthodinový profil) nebo `--pocasi=scenare` (počasí
 historických let, profil + pásmo nejistoty), `--trend=posledni|drzet`,
@@ -118,4 +129,6 @@ Kalendář (svátky, mosty, prázdniny, vánoční skupiny dnů) se nastavuje v
 | `src/correction.py` | korekce predikce D+1 z chyb dřívějších predikcí (online, reziduová vrstva) |
 | `src/longterm.py` | dlouhodobá predikce: budoucí osa, počasí normál / scénáře, pravidlo trendu, pásmo nejistoty |
 | `src/intraday.py` | intraday predikce: vydání po 15 min, korekce závislá na horizontu (rezidua modelu + chyba předpovědi počasí) |
+| `src/config.py` | konfigurace modelu z `config/model.yaml`: konstanty, meze, priory a pevné hodnoty fyzikálních parametrů |
+| `src/explain.py` | rozklad predikce na složky, vlivy počasí, křivky modelu, offline graf |
 | `src/operation.py` | provozní predikce od konce dat: přefit podle stáří parametrů, počasí, model + korekce |

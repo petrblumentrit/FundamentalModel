@@ -312,7 +312,7 @@ if (M.params && M.params.length) {
   const tb = document.querySelector("#params tbody");
   for (const p of M.params) {
     const tr = document.createElement("tr");
-    for (const [v, cls] of [[p.nazev, ""], [p.hodnota, ""], [p.jednotka, "txt"], [p.popis, "txt"], [p.zdroj, "txt"]]) {
+    for (const [v, cls] of [[p.nazev, ""], [p.hodnota, ""], [p.jednotka, "txt"], [p.popis, "txt"], [p.puvod, "txt"]]) {
       const td = document.createElement("td"); if (cls) td.className = cls; td.textContent = v; tr.append(td);
     }
     tb.append(tr);

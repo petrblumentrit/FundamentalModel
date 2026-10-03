@@ -14,7 +14,10 @@ pocasi (nejdal 39 h), a ulozi ji. Volby:
     --bez-grafu                     nevytvaret vysvetleni.html (~5 MB, plotly.js v souboru)
     --otevrit                       otevrit graf v prohlizeci
 
-Vystupy (mimo repo): parametry.pkl (stav modelu), predikce.csv (posledni
+Vystupy (mimo repo): parametry.pkl (stav modelu), parametry.yaml (fyzikalni
+parametry citelne; rucni uprava hodnoty se pri pristim spusteni prevezme a
+linearni cast se prefituje; trvale se parametr drzi polozkou `pevna` v
+config/model.yaml), predikce.csv (posledni
 vydani), archiv/predikce_RRRRMMDD_HHMM.csv (vsechna vydani, cas konce dat UTC),
 rozklad.csv (slozky modelu za poslednich 14 dni a predikci, spotreba ocistena
 o pocasi, vlivy osvitu, vetru a setrvacnosti), vysvetleni.html (offline graf
@@ -66,9 +69,23 @@ OUT.mkdir(parents=True, exist_ok=True)
 path = OUT / "parametry.pkl"
 state = pd.read_pickle(path) if path.exists() else None
 fitted = state["data_do"] if state else s
+# rucne prepsane hodnoty v parametry.yaml se prevezmou a linearni cast se prefituje
+edits = operation.read_edits(state, OUT / "parametry.yaml") if state else {}
+if edits:
+    print("rucne zmenene parametry: " + ", ".join(f"{n} = {v:g}" for (_, n), v in edits.items()))
+    state = operation.apply_edits(state, edits)
+    FORCE = FORCE if FORCE == "tvar" else "linearni"
+pins = operation.config_pins(state) if state else []
+if pins:
+    print("pevne hodnoty z config/model.yaml: " + ", ".join(pins))
 state, done = operation.update_params(df, state, FORCE, revised=int((rev.index < fitted).sum()))
+if done == "tvar" and edits:
+    print("pozor: probehl prefit tvaru — rucne zmenene hodnoty poslouzily jen jako vychozi odhad "
+          "(trvale: `pevna` v config/model.yaml)")
 if done != "nic":
     pd.to_pickle(state, path)
+if done != "nic" or not (OUT / "parametry.yaml").exists():
+    operation.write_yaml(state, OUT / "parametry.yaml")
 print(f"parametry: prefit {done} ({time.time() - t0:.0f} s); linearni cast z dat do "
       f"{state['data_do'].tz_convert(etl.TZ):%Y-%m-%d %H:%M}, tvar do {state['tvar_do'].tz_convert(etl.TZ):%Y-%m-%d %H:%M}")
 
@@ -98,7 +115,9 @@ if GRAPH:
         "konec": f"{local(s):%Y-%m-%d %H:%M}", "konec_text": f"{local(s):%d.%m.%Y %H:%M}",
         "horizont": float(f["horizont_h"].iloc[-1]), "do_text": f"do {loc.iloc[-1]:%d.%m. %H:%M}",
         "data_do": f"{local(state['data_do']):%d.%m.%Y %H:%M}", "tvar_do": f"{local(state['tvar_do']):%d.%m.%Y %H:%M}",
-        "fve_osvit": explain.PV_REF_SUN, "params": [],
+        "fve_osvit": explain.PV_REF_SUN,
+        "params": [{**r, "hodnota": ("0" if abs(r["hodnota"]) < 1e-6 else f"{r['hodnota']:.4g}").replace(".", ",")}
+                   for r in operation.physical(state["params"])],
     }
     out = explain.render(full, explain.curves(state["params"], s), meta, OUT / "vysvetleni.html")
     print(f"graf: {out}")

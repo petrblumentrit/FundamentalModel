@@ -666,3 +666,27 @@ Zadání: vstupem zůstávají CSV soubory, které se průběžně přepisují; 
 Ověřeno na kopii dat: přibývající řádky, dvě zpětné změny (nalezeny obě), spotřeba končící dřív než meteo a naopak, soubor bez šablony za koncem. Celý cyklus po aktualizaci souboru: načtení 1,3 s + predikce ~1 s.
 
 **Omezení:** když naměřené počasí chybí za poslední intervaly, kde spotřeba už je, tyto intervaly se nepoužijí (konec dat je dřívější z obou).
+
+### 2026-10-03 — transparentnost: rozklad predikce, konfigurace, parametry k zásahu (kroky 36–38)
+
+Zadání: výpočet má být průhledný — mezivýsledky jako vysvětlení predikce i pro někoho dalšího, ručně zvolené konstanty a fyzikální parametry v YAML (fyzikální parametry k zásahu), lineární koeficienty ne (jsou to koeficienty křivek; ukazují se jako křivky).
+
+**36 — rozklad predikce** (`src/explain.py`, `explore/vysvetleni_template.html`): model je aditivní, rozklad je jen výpis členů, nic se neodhaduje znovu. Složky: úroveň, denní profil, prázdniny a průběh léta, ráno po volnu, mosty, zvláštní období (dohromady „rozvrh a kalendář“), osvětlení za tmy, šero, topení, chlazení, FVE; součet = model (ověřeno proti `backtest.components`, rozdíl 5·10⁻⁴ ze zaokrouhlení CSV). Navíc:
+- **spotřeba očištěná o počasí** = skutečnost − topení − chlazení − FVE − šero;
+- **vlivy uvnitř nelineárních křivek** (osvit, vítr a setrvačnost u topení; osvit a setrvačnost u chlazení) jako rozdíl dvou výpočtů — nejsou sčítanci a navzájem se nesčítají;
+- **křivky modelu**: odezva na teplotu, topná a chladicí citlivost podle hodiny a typu dne, denní profil rozvrhu, svícení podle hodiny, úroveň / topná citlivost / špička FVE v čase.
+
+`predikce.py` k tomu zapisuje `provoz/rozklad.csv` (14 dní historie + predikce) a `provoz/vysvetleni.html` (offline graf: skládané složky proti skutečnosti, tabulka rozkladu v čase vybraném kliknutím, kalendářní odchylky + korekce + chyba modelu, vlivy počasí, křivky modelu, tabulka fyzikálních parametrů). `--bez-grafu` graf vynechá (soubor má ~5 MB kvůli vloženému plotly.js).
+
+Rozklad je přiřazení podle modelu, ne měření: členy se sdíleným regresorem (osvit u FVE, šera a solárních zisků; večerní špička u osvětlení a topení) odděluje jen struktura modelu.
+
+**37 — `config/model.yaml`** (`src/config.py`): ručně zvolené konstanty bázového, topného, chladicího a FVE modulu, slunce, fitu (váha prioru), korekcí a provozu; u fyzikálních parametrů popis, jednotka, meze, start a prior. Moduly si hodnoty načítají při importu do stávajících jmen (`heating.K_TOD`, `base.SMOOTH` …). Položky označené `[struktura]` mění počet koeficientů — po změně je nutný nový úplný fit. Ověřeno: celý řetězec fitu k 16. 3. 2026 a predikce D+1 jsou po přesunu shodné na nulu. Mimo konfiguraci zatím zůstávají kalibrace předpovědi počasí (`meteo_forecast`), dlouhodobá predikce a technické konstanty backtestu.
+
+**38 — fyzikální parametry k zásahu**:
+- **`provoz/parametry.yaml`** (generuje `predikce.py` po každém přefitu): 14 odhadnutých parametrů s popisem, jednotkou a původem (odhad / odhad na mezi / pevná hodnota) + odvozené veličiny (úroveň, topná citlivost na °C, špička FVE, RMSE tréninku). **Ruční přepsání hodnoty** se při příštím spuštění převezme a lineární část se k ní přefituje (~3 s); vydrží do příštího přefitu tvaru.
+- **`pevna:` v `config/model.yaml`**: parametr se drží na zadané hodnotě ve všech fitech (`config.solve` optimalizuje jen volné parametry; platí pro staged fit, joint fit, backtest i provoz, a i při denním lineárním přefitu). Změna pevné hodnoty v konfiguraci vyvolá v provozu lineární přefit hned.
+- Ověřeno: bez pevných hodnot je fit shodný na nulu; ruční úprava T_b 16,73 → 17,5 (RMSE tréninku 11,87 → 11,90); pevná τ = 60 h místo odhadnutých 81 h (po přefitu tvaru RMSE 11,97, ostatní parametry se přeskupily: w 0,33 → 0,29).
+
+Vedlejší pozorování z tabulky parametrů: `a_c` a `alpha_c` (osvit a účinnost u chlazení) leží na dolní mezi 0 a `gamma` (teplotní koeficient FVE) při fitu ze všech dat na horní mezi 0,01 — data je neurčují, případně horní mez `gamma` omezuje.
+
+**Další kroky:** backtest s pevnou hodnotou jako měřítko dopadu zásahu (`explore/backtest.py` pevné hodnoty z konfigurace už respektuje); kalibrace předpovědi počasí do konfigurace; prověřit `gamma` na mezi.

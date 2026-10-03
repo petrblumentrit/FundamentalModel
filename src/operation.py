@@ -20,13 +20,19 @@ Postup pri kazdem spusteni (predikce.py v koreni projektu):
 import numpy as np
 import pandas as pd
 
+import yaml
+
 import backtest
+import base
 import config
+import cooling
 import etl
 import explain
+import heating
 import intraday
 import longterm
 import meteo_forecast
+import pv
 
 STEP = pd.Timedelta(minutes=15)
 _C = config.model()["provoz"]        # hodnoty v config/model.yaml
@@ -37,6 +43,89 @@ EXPLAIN_DAYS = _C["rozklad_dni"]                    # [dny] historie v rozkladu 
 FC_HISTORY = pd.Timedelta(days=45)   # predpoved pocasi zpet: klouzavy bias (30 dni) a chyba pocasi v korekci
 
 
+SECTIONS = {"topeni": (1, heating.PARAM_NAMES), "chlazeni": (2, cooling.PARAM_NAMES), "fve": (3, pv.PARAM_NAMES)}
+DIGITS = 6      # platnych cislic v parametry.yaml
+HEADER = """# Fyzikalni parametry modelu, se kterymi se prave pocita (generuje predikce.py).
+# Hodnotu lze rucne prepsat: pri pristim spusteni se prevezme a linearni cast
+# modelu se k ni prefituje. Uprava vydrzi do pristiho prefitu tvaru (tydne);
+# trvale se parametr drzi polozkou `pevna` v config/model.yaml.
+"""
+
+
+def _rounded(v: float) -> float:
+    return float(f"{float(v):.{DIGITS}g}")
+
+
+def physical(params: tuple) -> list[dict]:
+    """Fyzikalni parametry s popisem z konfigurace: radky {sekce, nazev,
+    hodnota, jednotka, popis, puvod} — pro parametry.yaml a tabulku v grafu."""
+    rows = []
+    for sec, (k, names) in SECTIONS.items():
+        sp = config.spec(sec)
+        for n in names:
+            v, lo, hi = float(params[k][n]), *map(float, sp[n]["meze"])
+            if sp[n].get("pevna") is not None:
+                src = "pevná hodnota z konfigurace"
+            elif abs(v - lo) <= 1e-6 * (hi - lo):
+                src = "odhad, na dolní mezi"
+            elif abs(v - hi) <= 1e-6 * (hi - lo):
+                src = "odhad, na horní mezi"
+            else:
+                src = "odhad"
+            rows.append({"sekce": sec, "nazev": n, "hodnota": _rounded(v), "jednotka": sp[n]["jednotka"],
+                         "popis": sp[n]["popis"], "puvod": src})
+    return rows
+
+
+def write_yaml(state: dict, path) -> None:
+    """Citelny stav modelu: fyzikalni parametry + odvozene veliciny ke konci dat."""
+    bp, hp, cp, pp = state["params"]
+    end = pd.DatetimeIndex([state["data_do"]])
+    loc = lambda t: f"{t.tz_convert(etl.TZ):%Y-%m-%d %H:%M}"
+    out = {"stav": {
+        "linearni_cast_z_dat_do": loc(state["data_do"]), "tvar_z_dat_do": loc(state["tvar_do"]),
+        "rmse_trenink": round(float(bp["rmse"]), 2),
+        "uroven_portfolia": round(float(base.level_curve(end, bp)[0]), 1),
+        "topna_citlivost_na_stupen": round(float(heating.k_curve(0, hp).mean() + heating.trend_curve(end, hp)[0]), 2),
+        "spicka_fve": round(float(pv.capacity_curve(end, pp)[0] * explain.PV_REF_SUN), 1),
+    }}
+    for r in physical(state["params"]):
+        out.setdefault(r["sekce"], {})[r["nazev"]] = {k: r[k] for k in ("hodnota", "jednotka", "puvod", "popis")}
+    path.write_text(HEADER + yaml.safe_dump(out, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+
+def read_edits(state: dict, path) -> dict:
+    """Rucne prepsane hodnoty v parametry.yaml: {(sekce, nazev): hodnota} tam,
+    kde se soubor lisi od ulozeneho stavu (v zapsane presnosti)."""
+    if not path.exists():
+        return {}
+    doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    out = {}
+    for sec, (k, names) in SECTIONS.items():
+        for n in names:
+            v = (doc.get(sec) or {}).get(n, {}).get("hodnota")
+            if v is not None and float(v) != _rounded(state["params"][k][n]):
+                out[(sec, n)] = float(v)
+    return out
+
+
+def apply_edits(state: dict, edits: dict) -> dict:
+    """Stav s prevzatymi rucnimi hodnotami (linearni cast je pak nutne prefitovat)."""
+    params = [dict(p) for p in state["params"]]
+    for (sec, n), v in edits.items():
+        params[SECTIONS[sec][0]][n] = v
+    return {**state, "params": tuple(params)}
+
+
+def config_pins(state: dict) -> list[str]:
+    """Parametry, jejichz pevna hodnota v config/model.yaml se lisi od stavu."""
+    out = []
+    for sec, (k, names) in SECTIONS.items():
+        fix = config.fixed(sec, names)
+        out += [n for n, f in zip(names, fix) if not np.isnan(f) and float(state["params"][k][n]) != f]
+    return out
+
+
 def end_of_data(df: pd.DataFrame) -> pd.Timestamp:
     return df.index[-1] + STEP
 
@@ -45,7 +134,9 @@ def update_params(df: pd.DataFrame, state: dict | None, force: str | None = None
                   revised: int = 0) -> tuple[dict, str]:
     """Stav {params, data_do, tvar_do} platny pro konec dat df a co se prefitovalo
     ("tvar" | "linearni" | "nic"). force = "tvar" | "linearni" | "ne";
-    revised = pocet zpetne zmenenych intervalu v datech, ze kterych se fitovalo."""
+    revised = pocet zpetne zmenenych intervalu v datech, ze kterych se fitovalo.
+    Linearni cast se prefituje i tehdy, kdyz se pevna hodnota v konfiguraci
+    lisi od stavu (fit.joint ji pri fix_shape prevezme)."""
     s = end_of_data(df)
     if state is not None and force == "ne":
         return state, "nic"
@@ -56,7 +147,7 @@ def update_params(df: pd.DataFrame, state: dict | None, force: str | None = None
         shape = backtest.refit(dh, np.ones(len(dh), bool), state["params"] if state else None)
         params = backtest.refit(df, full, shape, fix_shape=True)
         return {"params": params, "data_do": s, "tvar_do": s}, "tvar"
-    if force == "linearni" or s - state["data_do"] >= LINEAR_AGE or revised >= REVISION_REFIT:
+    if force == "linearni" or s - state["data_do"] >= LINEAR_AGE or revised >= REVISION_REFIT or config_pins(state):
         params = backtest.refit(df, full, state["params"], fix_shape=True)
         return {"params": params, "data_do": s, "tvar_do": state["tvar_do"]}, "linearni"
     return state, "nic"

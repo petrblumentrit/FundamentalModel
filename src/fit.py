@@ -14,7 +14,7 @@ vnejsi funkce prochazelo matici 160k x 30.
 """
 import numpy as np
 import pandas as pd
-from scipy.optimize import least_squares, lsq_linear
+from scipy.optimize import lsq_linear
 
 import base
 import config
@@ -97,13 +97,13 @@ def fit_cooling_pv(df: pd.DataFrame, resid: np.ndarray,
     lower = np.concatenate([cooling.LOWER, pv.LOWER])
     upper = np.concatenate([cooling.UPPER, pv.UPPER])
     x0 = np.concatenate([cooling.X0, pv.X0])
-    sol = least_squares(lambda p: inner(p)[1], x0, bounds=(lower, upper),
-                        diff_step=1e-3, x_scale=upper - lower, verbose=0)
-    coef, res = inner(sol.x)
+    fix = np.concatenate([config.fixed("chlazeni", cooling.PARAM_NAMES), config.fixed("fve", pv.PARAM_NAMES)])
+    x = config.solve(lambda p: inner(p)[1], x0, lower, upper, fix, verbose=0)
+    coef, res = inner(x)
 
-    c_params = dict(zip(cooling.PARAM_NAMES, sol.x[:-1]))
+    c_params = dict(zip(cooling.PARAM_NAMES, x[:-1]))
     c_params.update({"k_coef": coef[:n_c], "k_tod": cooling.K_TOD})
-    p_params = {"gamma": float(sol.x[-1]), "delta": coef[n_c:],
+    p_params = {"gamma": float(x[-1]), "delta": coef[n_c:],
                 "t0": str(t0), "span_days": span, "knot_days": pv.KNOT_DAYS}
     stats = {"rmse": float(np.sqrt(np.mean(res**2))),
              "r2": float(1 - res.var() / r.var())}
@@ -232,11 +232,13 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
     def residuals(q):
         return np.concatenate([inner(q)[1], p_w * (q[p_idx] - p_mu) / p_sd])
 
+    # pevne hodnoty z config/model.yaml se drzi i pri fix_shape
+    fix = np.concatenate([config.fixed("topeni", heating.PARAM_NAMES),
+                          config.fixed("chlazeni", cooling.PARAM_NAMES), config.fixed("fve", pv.PARAM_NAMES)])
     if fix_shape:
-        q = x0
+        q = config.pinned(x0, fix)
     else:
-        q = least_squares(residuals, x0, bounds=(lower, upper),
-                          diff_step=1e-3, x_scale=upper - lower, max_nfev=max_nfev).x
+        q = config.solve(residuals, x0, lower, upper, fix, max_nfev=max_nfev)
     coef, res = inner(q)
 
     stats = {"rmse": float(np.sqrt(np.mean(res**2))),
