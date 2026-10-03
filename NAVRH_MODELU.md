@@ -603,3 +603,35 @@ Poslední trend přidává za rok v průměru +9 jednotek (1,4 %), z toho větš
 Měsíční průměry (scénáře): 8/2026 611 · 9/ 619 · 10/ 642 · 11/ 717 · 12/ 740 · 1/2027 769 · 2/ 747 · 3/ 689 · 4/ 651 · 5/ 614 · 6/ 629 · 7/ 608.
 
 **Další kroky:** delší řada počasí ze stanice (`Data/meteo_historie.csv`) — víc nezávislých scénářů a kalibrované pásmo; navázání na předpověď počasí pro první dny (archiv s předstihem D+2 až D+10); pravidlo trendu znovu ověřit s dalšími daty (foldy jsou jen tři).
+
+### 2026-10-03 — intraday predikce: přepočet s čerstvým počasím + korekce závislá na horizontu (krok 33)
+
+**Provozní časy** (jeden proces, celá historie): výpočet predikce z hotových parametrů 0,05 s, lineární přefit ~7 s (1× denně), nelineární přefit tvaru s warm startem ~43 s (1× týdně), celý řetězec od nuly ~99 s. Predikci tedy lze vydávat po každém 15min měření; přeučování se tím nemění.
+
+**Metoda** (`src/intraday.py`, `explore/intraday.py`): vydání po každém 15min intervalu za poslední rok (35 040 vydání), cíle od konce dat *s* do konce dne D+1 (až 39 h). Horizont = konec cílového intervalu za koncem dat; při zpoždění měření o L se výsledky čtou na horizontu posunutém o L. Parametry: lineární přefit denně z dat do D 09:00 (platí pro *s* v [D 09:00, D+1 09:00)), tvar týdně.
+
+1. **Přepočet s čerstvým počasím**: do *s* naměřené počasí (stav setrvačnostních filtrů), od *s* předpověď. Archiv má jedinou předpověď na den (z D 10:00 na D+1), takže zpřesnění předpovědi s kratším předstihem simulovat nejde — ukáže až provoz.
+2. **Korekce závislá na horizontu** — aditivní reziduová vrstva, koeficienty pro každý horizont zvlášť, odhad online (jen z vydání, jejichž cíl byl v *s* už změřený; prvních 21 dní bez korekce). Vstupy z reziduí r = skutečnost − model s naměřeným počasím: průměr za poslední hodinu (`x1`), za 24 h (`xden`), stejný čas dne poslední známý den (`vcera`) a průměr za 7 dní (`tyden`). S předpovědí počasí navíc stejná čtveřice z w = model s naměřeným počasím − model s předpovědí (`*_w`): chyba předpovědi počasí přepočtená modelem na spotřebu.
+
+**Výsledky** (RMSE 15min, celý rok; v závorce MAPE):
+
+| horizont | naměřené počasí: model | + korekce | předpověď počasí: model | + korekce |
+|---|---|---|---|---|
+| 15 min | 12,9 | 6,1 (0,72 %) | 16,7 | 7,1 (0,84 %) |
+| 30 min | 12,9 | 6,9 | 16,7 | 8,2 |
+| 1 h | 12,9 | 7,8 (0,93 %) | 16,8 | 9,7 (1,12 %) |
+| 2 h | 12,9 | 9,1 | 16,8 | 11,8 |
+| 3 h | 13,0 | 9,7 (1,14 %) | 16,9 | 13,1 (1,47 %) |
+| 6 h | 13,0 | 10,5 | 17,1 | 14,7 |
+| 12 h | 13,1 | 10,9 (1,26 %) | 17,3 | 15,4 (1,70 %) |
+
+Horizonty nad 15 h mají jen část vydání (cíle končí dnem D+1), mezi sebou nejsou srovnatelné. Kontrola proti simulaci D+1 (konec dat D 09:00, cíl celý den D+1): model 13,13 / 17,71 — shodné s backtestem v11; s intraday korekcí 11,56 / 16,54 (korekce D+1 z kroku 8b: 11,62 / 16,72).
+
+- **Zisk je v prvních 3 hodinách**: s předpovědí počasí 16,7 → 7,1 (15 min), 9,7 (1 h), 13,1 (3 h). Za 6 h zbývá jen zisk z tvaru chyby podle času dne.
+- **Členy chyby počasí jsou nutné**: bez nich korekce s předpovědí počasí dala na 15 min jen 12,0 a na 1 h 13,0 — rezidua z naměřeného počasí chybu předpovědi v cíli nevidí. Koeficient poslední hodiny chyby počasí je na 15 min 0,98 a klesá na 0,26 za 6 h (rychleji než u chyby modelu: 0,88 → 0,21).
+- Koeficienty se chovají podle očekávání: váha poslední hodiny s horizontem klesá (0,88 → 0,08 za 12 h), váha tvaru podle času dne roste (`vcera` + `tyden` 0,04 → 0,69).
+- Svátky, mosty a Vánoce v cíli výsledek téměř nemění (15 min 7,1 vs 7,1; 12 h 15,4 vs 15,1) — vyřazování nepravidelných dnů ze zdroje korekce zatím není.
+
+**Omezení:** samotný přepočet s čerstvým počasím (bez korekce) model téměř nezlepší (16,7 na 15 min vs 17,7 pro D+1) — archiv nemá předpovědi s kratším předstihem; model s předpovědí počasí v minulých dnech (pro w) je aproximace (filtry běží na předpovědi 9 dní zpět, v provozu by se braly skutečně vydané predikce); koeficienty nezávisí na čase dne vydání.
+
+**Další kroky:** provozní skript (uložené parametry → predikce po příchodu měření); koeficienty podle času dne; vyřazení nepravidelných dnů ze vstupů `vcera` / `tyden`; pásmo nejistoty podle horizontu.
