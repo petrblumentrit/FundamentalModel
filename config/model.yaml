@@ -137,6 +137,8 @@ fve:
       jednotka: "1/°C"
       meze: [0.0, 0.01]
       start: 0.004
+      # z dat neurcena (RMSE se pres 0-0,03 meni o 0,05 %, krok 39) -> fyzikalni hodnota
+      pevna: 0.004
 
 fit:
   prior_vaha: 0.01             # vaha prioru: odchylka o 1 sm. odch. stoji ~1 % souctu ctvercu

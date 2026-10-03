@@ -709,3 +709,5 @@ Tabulka parametrů ukázala `gamma` na horní mezi 0,01 (fyzikálně ~0,004 na �
 - Rezidua za dne podle teploty a osvitu jsou pro `gamma` = 0,004 a volnou prakticky stejná (rozdíly do 1,2). Jediná výraznější buňka — mráz se sluncem 300–600 W/m², −6,3 resp. −5,1 — má málo hodin (pásmo pod 0 °C celkem 188 h) a na `gamma` nezávisí.
 
 **Závěr:** fyzikální hodnota 0,004 stojí 0,002 RMSE; držet ji jako `pevna` je čistší než odhad na mezi (špička FVE pak vychází 57,6 místo 56,1).
+
+**Provedeno:** `gamma` drzena na 0,004 (`pevna` v `config/model.yaml`); provozni predikce se zmenila v prumeru o desetiny jednotky.
