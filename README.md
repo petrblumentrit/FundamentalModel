@@ -67,7 +67,9 @@ dni, tvar po týdnu; `--prefit=tvar|linearni|ne`), počasí bere do konce dat
 naměřené a dál z archivu předpovědí, korekci podle horizontu z koeficientů
 intraday backtestu (`--korekce=soubor`). Výstup `provoz/predikce.csv` a
 `provoz/archiv/`; `--konec="2026-07-20 12:00"` přehraje minulý okamžik.
-S uloženými parametry trvá běh ~1 s.
+S uloženými parametry trvá běh ~1 s, po aktualizaci vstupních CSV ~2,5 s
+(soubory se čtou celé, takže zpětně zpřesněná měření se projeví sama;
+skript vypíše, kolik intervalů se od minulého spuštění změnilo).
 
 Dlouhodobá predikce (`explore/dlouhodoba.py`): `--pocasi=normal` (jedna
 normálová dráha počasí, čtvrthodinový profil) nebo `--pocasi=scenare` (počasí

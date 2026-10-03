@@ -1,4 +1,5 @@
 """Nacteni vstupnich dat: 15min spotreba portfolia a meteo (CET/CEST -> UTC)."""
+import time
 from pathlib import Path
 
 import numpy as np
@@ -6,6 +7,8 @@ import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "Data"
 TZ = "Europe/Prague"
+READ_RETRIES = 4   # pokusu o nacteni, kdyz se vstupni soubor pri cteni meni
+READ_WAIT = 2.0    # [s] cekani mezi pokusy
 SRC_DIR = Path(__file__).resolve().parent
 # mezipamet nactenych dat (v Data/, mimo git): plati, dokud se nezmeni vstupni
 # soubory, konfigurace kalendare ani kod, ktery je zpracovava
@@ -17,11 +20,21 @@ _CACHE_DEPS = [DATA_DIR / "baseload.csv", DATA_DIR / "Meteo15.csv",
 
 def _read_csv(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path, sep=";", decimal=",")
-    ts = pd.to_datetime(df["timestamp"], format="mixed", dayfirst=True)
+    ts = _timestamps(df["timestamp"])
     # data jsou v lokalnim case: podzimni duplicitni hodina se rozlisi poradim
     ts = ts.dt.tz_localize(TZ, ambiguous="infer")
     df["timestamp"] = ts.dt.tz_convert("UTC")
     return df.set_index("timestamp").sort_index()
+
+
+def _timestamps(s: pd.Series) -> pd.Series:
+    """Casove znacky exportu: "01.01.2022" (pulnoc bez casu) nebo
+    "01.01.2022 0:15". S pevnym formatem ~0,8 s na soubor; format="mixed"
+    parsuje po prvcich (12-17 s) a zustava jen jako zaloha pro jiny zapis."""
+    try:
+        return pd.to_datetime(s.where(s.str.len() > 10, s + " 0:00"), format="%d.%m.%Y %H:%M")
+    except ValueError:
+        return pd.to_datetime(s, format="mixed", dayfirst=True)
 
 
 def step_hours(df: pd.DataFrame) -> float:
@@ -59,12 +72,51 @@ def load(with_local_time: bool = True) -> pd.DataFrame:
                 return cached
         except Exception:
             pass
-        df = _load(True)
+        df = _load_stable(key)
+        key = _cache_key()
         tmp = CACHE.with_suffix(f".{np.random.randint(1 << 30)}.tmp")
         pd.to_pickle((key, df), tmp)
         tmp.replace(CACHE)             # atomicky — workery mohou zapisovat soucasne
         return df
     return _load(False)
+
+
+def _load_stable(key: tuple) -> pd.DataFrame:
+    """_load odolny proti soubehu s aktualizaci vstupnich souboru: kdyz se
+    soubor behem cteni zmeni nebo je zapsany jen zcasti, cte se znovu."""
+    for attempt in range(READ_RETRIES):
+        try:
+            df = _load(True)
+        except Exception:
+            if attempt == READ_RETRIES - 1:
+                raise
+        else:
+            now = _cache_key()
+            if now == key:
+                return df
+            key = now
+        time.sleep(READ_WAIT)
+    return df
+
+
+def previous() -> pd.DataFrame | None:
+    """Data z minuleho nacteni (mezipamet), i kdyz uz neplati — pro zjisteni,
+    co se ve vstupnich souborech zmenilo. Volat pred load()."""
+    try:
+        return pd.read_pickle(CACHE)[1]
+    except Exception:
+        return None
+
+
+def revisions(old: pd.DataFrame | None, new: pd.DataFrame, tol: float = 1e-6) -> pd.DataFrame:
+    """Zpetne zmenene hodnoty (zpresneni mereni): radky spolecne obema nactenim,
+    kde se spotreba nebo meteo lisi; sloupce = zmena (nova - stara)."""
+    cols = ["baseload", "temp", "sun", "wind"]
+    if old is None:
+        return pd.DataFrame(columns=cols)
+    idx = old.index.intersection(new.index)
+    d = new.loc[idx, cols] - old.loc[idx, cols]
+    return d[(d.abs() > tol).any(axis=1)]
 
 
 def add_calendar(df: pd.DataFrame) -> pd.DataFrame:
@@ -117,10 +169,13 @@ def _load(with_local_time: bool) -> pd.DataFrame:
     mt = _read_csv(DATA_DIR / "Meteo15.csv")
     # duplicitni timestampy (artefakty exportu kolem zmen casu) -> prumer
     mt = mt.groupby(level=0).mean()
-    # realna data konci tam, kde konci meteo; dal jsou v obou souborech
-    # jen prazdne radky sablony (baseline sum kolem nuly, meteo NaN)
+    # za koncem realnych dat jsou v obou souborech jen radky sablony: meteo
+    # prazdne, baseline zaporny sum kolem nuly (realna spotreba je >= 300).
+    # Konec se urcuje pro kazdy soubor zvlast — mereni pocasi a spotreby
+    # nemusi prichazet stejne rychle; data konci tim drivejsim z nich.
     valid_end = mt["temp"].last_valid_index()
     mt = mt.loc[:valid_end]
+    bl = bl.loc[:bl.index[bl["baseload"] > 0].max()]
     # doplneni chybejicich intervalu na plnou 15min osu, kratke diry interpolovat
     full = pd.date_range(mt.index.min(), mt.index.max(), freq="15min", tz="UTC")
     mt = mt.reindex(full).interpolate(limit=4)

@@ -2,7 +2,10 @@
 
 Postup pri kazdem spusteni (predikce.py v koreni projektu):
 
-1. data (etl.load) — konec dat s = prvni nezmereny interval,
+1. data (etl.load) — vstupni CSV se ctou pokazde cela (~1,3 s), takze zpetne
+   zpresnena mereni se projevi sama: v rezidualni korekci hned, v parametrech
+   pri pristim prefitu (pri zmene REVISION_REFIT a vic intervalu okamzite).
+   Konec dat s = prvni interval, kde chybi spotreba nebo namerene pocasi,
 2. parametry modelu z ulozeneho stavu; prefit jen kdyz zestarly: linearni
    koeficienty po LINEAR_AGE (~7 s), nelinearni tvar po SHAPE_AGE (~45 s,
    warm start z ulozenych). Bez ulozeneho stavu cely retezec (~100 s),
@@ -26,6 +29,7 @@ import meteo_forecast
 STEP = pd.Timedelta(minutes=15)
 LINEAR_AGE = pd.Timedelta(days=1)    # stari dat linearniho prefitu, po kterem se opakuje
 SHAPE_AGE = pd.Timedelta(days=7)     # totez pro nelinearni tvar
+REVISION_REFIT = 96                  # [intervaly] zpetne zmenenych dat, od kolika se linearni cast prefituje hned
 FC_HISTORY = pd.Timedelta(days=45)   # predpoved pocasi zpet: klouzavy bias (30 dni) a chyba pocasi v korekci
 
 
@@ -33,9 +37,11 @@ def end_of_data(df: pd.DataFrame) -> pd.Timestamp:
     return df.index[-1] + STEP
 
 
-def update_params(df: pd.DataFrame, state: dict | None, force: str | None = None) -> tuple[dict, str]:
+def update_params(df: pd.DataFrame, state: dict | None, force: str | None = None,
+                  revised: int = 0) -> tuple[dict, str]:
     """Stav {params, data_do, tvar_do} platny pro konec dat df a co se prefitovalo
-    ("tvar" | "linearni" | "nic"). force = "tvar" | "linearni" | "ne"."""
+    ("tvar" | "linearni" | "nic"). force = "tvar" | "linearni" | "ne";
+    revised = pocet zpetne zmenenych intervalu v datech, ze kterych se fitovalo."""
     s = end_of_data(df)
     if state is not None and force == "ne":
         return state, "nic"
@@ -46,7 +52,7 @@ def update_params(df: pd.DataFrame, state: dict | None, force: str | None = None
         shape = backtest.refit(dh, np.ones(len(dh), bool), state["params"] if state else None)
         params = backtest.refit(df, full, shape, fix_shape=True)
         return {"params": params, "data_do": s, "tvar_do": s}, "tvar"
-    if force == "linearni" or s - state["data_do"] >= LINEAR_AGE:
+    if force == "linearni" or s - state["data_do"] >= LINEAR_AGE or revised >= REVISION_REFIT:
         params = backtest.refit(df, full, state["params"], fix_shape=True)
         return {"params": params, "data_do": s, "tvar_do": state["tvar_do"]}, "linearni"
     return state, "nic"

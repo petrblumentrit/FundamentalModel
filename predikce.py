@@ -40,16 +40,24 @@ for _a in sys.argv[1:]:
         END = pd.Timestamp(_a.split("=", 1)[1]).tz_localize(etl.TZ).tz_convert("UTC")
 
 t0 = time.time()
+old = etl.previous()
 df = etl.load()
 if END is not None:
     df = df[df.index < END]
 s = operation.end_of_data(df)
-print(f"konec dat: {s.tz_convert(etl.TZ):%Y-%m-%d %H:%M} ({len(df)} intervalu)")
+print(f"konec dat: {s.tz_convert(etl.TZ):%Y-%m-%d %H:%M} ({len(df)} intervalu, nacteno za {time.time() - t0:.1f} s)")
+# zpetne zmenene hodnoty od minuleho spusteni (zpresneni mereni)
+rev = etl.revisions(old, df)
+if len(rev):
+    loc = rev.index.tz_convert(etl.TZ)
+    print(f"zpetne zmeneno {len(rev)} intervalu ({loc[0]:%Y-%m-%d %H:%M} - {loc[-1]:%Y-%m-%d %H:%M}), "
+          f"nejvetsi zmena spotreby {rev['baseload'].abs().max():.1f}, teploty {rev['temp'].abs().max():.2f}")
 
 OUT.mkdir(parents=True, exist_ok=True)
 path = OUT / "parametry.pkl"
 state = pd.read_pickle(path) if path.exists() else None
-state, done = operation.update_params(df, state, FORCE)
+fitted = state["data_do"] if state else s
+state, done = operation.update_params(df, state, FORCE, revised=int((rev.index < fitted).sum()))
 if done != "nic":
     pd.to_pickle(state, path)
 print(f"parametry: prefit {done} ({time.time() - t0:.0f} s); linearni cast z dat do "

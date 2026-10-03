@@ -652,3 +652,17 @@ Horizonty nad 15 h mají jen část vydání (cíle končí dnem D+1), mezi sebo
 **Omezení:** konec dat = poslední řádek, kde je spotřeba i naměřené meteo (opožděné meteo zdrží i spotřebu); ETL při každé změně vstupních souborů načítá celé CSV znovu (11–24 s) — pro 15min provoz bude potřeba přírůstkové načítání; při přehrávání minulosti archiv obsahuje i předpovědi vydané až po *s* (cíle za koncem D+1).
 
 **Další kroky:** přírůstkové načítání dat; vstup čerstvé předpovědi počasí s kratším předstihem; vyhodnocení archivu vydaných predikcí proti skutečnosti; koeficienty korekce podle času dne; pásmo nejistoty podle horizontu.
+
+### 2026-10-03 — načítání aktualizovaných CSV (krok 35)
+
+Zadání: vstupem zůstávají CSV soubory, které se průběžně přepisují; měnit se mohou i hodnoty v minulosti (zpřesnění měření). Napojení na databázi později.
+
+**Řešení: číst pokaždé celé soubory, ale rychle** — místo přírůstkového načítání, které by zpětné změny muselo hledat zvlášť. Celých 34 s načtení zabíral převod časových značek (`format="mixed"` parsuje po prvcích); s pevným formátem exportu („01.01.2022“ / „01.01.2022 0:15“) trvá **1,3 s** a výsledek je shodný do posledního řádku (`etl._timestamps`, `mixed` zůstává jako záloha pro jiný zápis). Zpětné zpřesnění se tak projeví samo: ve vstupech korekce hned, v parametrech při příštím přefitu.
+
+- **Konec dat** se určuje pro každý soubor zvlášť (meteo: poslední platná teplota; spotřeba: poslední kladná hodnota — řádky šablony za koncem mají záporný šum kolem −12) a data končí dřívějším z nich. Dřív rozhodovalo jen meteo; kdyby měření počasí předběhlo spotřebu, vzala by se šablona jako skutečnost.
+- **Zpětné změny** (`etl.previous`, `etl.revisions`): porovnání s minulým načtením, `predikce.py` vypíše počet změněných intervalů, rozsah a největší změnu. Při změně ≥ 96 intervalů v datech, ze kterých se fitovalo (`operation.REVISION_REFIT`), se lineární část přefituje hned, jinak podle stáří (do 1 dne).
+- **Souběh se zápisem** (`etl._load_stable`): když se soubor během čtení změní nebo je zapsaný jen zčásti, čte se znovu (4 pokusy po 2 s).
+
+Ověřeno na kopii dat: přibývající řádky, dvě zpětné změny (nalezeny obě), spotřeba končící dřív než meteo a naopak, soubor bez šablony za koncem. Celý cyklus po aktualizaci souboru: načtení 1,3 s + predikce ~1 s.
+
+**Omezení:** když naměřené počasí chybí za poslední intervaly, kde spotřeba už je, tyto intervaly se nepoužijí (konec dat je dřívější z obou).
