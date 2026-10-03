@@ -13,3 +13,5 @@ Analyza/
 models/dlouhodoba_validace.pkl
 # stav a vystupy provozni predikce (obsahuji data portfolia)
 provoz/
+# generovana dokumentace (obrazky z dat portfolia)
+dokumentace/

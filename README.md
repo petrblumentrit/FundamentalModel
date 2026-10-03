@@ -55,6 +55,7 @@ uv run python explore/zd_analyza.py       # 14   srovnani s domacnostmi PRE (dat
 uv run python explore/vanoce_analyza.py   # 17   Vanoce 2022-2025 (rezidua po dnech a skupinach)
 uv run python explore/ceps_analyza.py     # 19   zatizeni CR (CEPS/ENTSO-E) a predpoved CEPS
 uv run python explore/zatop_test.py       # 25   opozdene zatopeni po teplem obdobi (test na reziduich)
+uv run python explore/dokumentace.py      # dokumentace modelu v HTML (dokumentace/dokumentace.html)
 uv run python explore/ocistena.py          # historie spotreby proti spotrebe bez topeni a chlazeni (graf)
 uv run python explore/fve_teplota_test.py  # 39   teplotni koeficient FVE: profil fitu a rezidua za dne
 uv run python explore/dlouhodoba_validace.py  # 31  dopredna validace predikce na rok dopredu

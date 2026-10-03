@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fundamentální model spotřeby — dokumentace</title>
+<script>/*__PLOTLY__*/</script>
+<style>
+:root {
+  color-scheme: light;
+  --surface: #fcfcfb; --surface-2: #f3f2ef; --border: #e1e0d9;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+  --grid: #e1e0d9; --baseline: #c3c2b7;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+  --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface: #1a1a19; --surface-2: #242423; --border: #383835;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #333331; --baseline: #52514e;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+    --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1a1a19; --surface-2: #242423; --border: #383835;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+  --grid: #333331; --baseline: #52514e;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+  --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface); color: var(--text-primary);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 920px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font-size: 30px; line-height: 1.2; margin: 0 0 8px; font-weight: 650; }
+h2 { font-size: 22px; margin: 56px 0 12px; font-weight: 650; padding-top: 16px; border-top: 1px solid var(--border); }
+h3 { font-size: 17px; margin: 32px 0 8px; font-weight: 650; }
+p { margin: 0 0 14px; }
+.lead { font-size: 18px; color: var(--text-secondary); margin-bottom: 24px; }
+.meta { color: var(--text-muted); font-size: 13px; margin-bottom: 32px; }
+a { color: var(--series-1); }
+nav { background: var(--surface-2); border-radius: 8px; padding: 14px 18px; margin: 0 0 32px; font-size: 15px; }
+nav ol { margin: 6px 0 0; padding-left: 22px; columns: 2; column-gap: 32px; }
+nav b { font-weight: 600; }
+.idea { border-left: 3px solid var(--series-1); background: var(--surface-2); border-radius: 0 8px 8px 0; padding: 14px 18px; margin: 20px 0; }
+.idea p:last-child { margin: 0; }
+.eq { font-family: ui-monospace, Consolas, monospace; font-size: 14px; background: var(--surface-2); border-radius: 8px;
+  padding: 12px 16px; margin: 14px 0; overflow-x: auto; white-space: pre; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: 0.9em; background: var(--surface-2); border-radius: 4px; padding: 1px 5px; }
+pre { font-family: ui-monospace, Consolas, monospace; font-size: 14px; background: var(--surface-2); border-radius: 8px;
+  padding: 12px 16px; margin: 12px 0 16px; overflow-x: auto; line-height: 1.5; }
+pre code { background: none; padding: 0; font-size: inherit; }
+figure { margin: 20px 0 28px; }
+figcaption { color: var(--text-secondary); font-size: 14px; margin-top: 6px; }
+.chart { width: 100%; height: 340px; }
+.chart.tall { height: 420px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
+.pair .chart { height: 280px; }
+.controls { display: flex; gap: 6px; margin-bottom: 6px; }
+button { font: inherit; font-size: 14px; color: var(--text-primary); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+button[aria-pressed="true"] { border-color: var(--text-primary); }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 14px; margin: 12px 0 20px; }
+th, td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--text-secondary); font-weight: 500; }
+th:first-child, td:first-child, .l { text-align: left; }
+.wrap { overflow-x: auto; }
+/* schema toku vypoctu */
+.flow { display: grid; grid-template-columns: 1fr auto 1.25fr auto 0.9fr; gap: 10px; align-items: center; margin: 20px 0 8px; font-size: 14px; }
+.flow .col { display: grid; gap: 8px; }
+.box { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--surface-2); }
+.box b { display: block; font-weight: 600; }
+.box span { color: var(--text-secondary); font-size: 13px; }
+.box.term { border-left: 4px solid var(--c); }
+.box.out { border-color: var(--text-primary); }
+.arrow { color: var(--text-muted); font-size: 22px; text-align: center; }
+.flow h4 { margin: 0 0 2px; font-size: 12px; font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+@media (max-width: 760px) {
+  .flow { grid-template-columns: 1fr; } .arrow { transform: rotate(90deg); }
+  .pair { grid-template-columns: 1fr; } nav ol { columns: 1; }
+}
+.steps { counter-reset: step; list-style: none; padding: 0; margin: 12px 0; }
+.steps > li { counter-increment: step; position: relative; padding: 0 0 6px 44px; margin-bottom: 14px; }
+.steps > li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 30px; height: 30px; border-radius: 50%;
+  background: var(--surface-2); border: 1px solid var(--border); display: grid; place-items: center; font-weight: 600; font-size: 14px; }
+.steps h3 { margin: 2px 0 6px; }
+.note { color: var(--text-muted); font-size: 13px; }
+@media print { nav, .controls { display: none; } h2 { break-after: avoid; } figure { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fundamentální model spotřeby elektřiny</h1>
+  <p class="lead">Čtvrthodinová spotřeba portfolia rozložená na příspěvky, které mají fyzikální nebo behaviorální vysvětlení — a z nich složená predikce.</p>
+  <p class="meta" id="meta"></p>
+
+  <nav><b>Obsah</b>
+    <ol>
+      <li><a href="#myslenka">Hlavní myšlenka</a></li>
+      <li><a href="#slozky">Složky modelu</a></li>
+      <li><a href="#odhad">Jak se model odhaduje</a></li>
+      <li><a href="#predikce">Od modelu k predikci</a></li>
+      <li><a href="#presnost">Přesnost</a></li>
+      <li><a href="#omezeni">Co model neumí</a></li>
+      <li><a href="#pruhlednost">Průhlednost a zásahy</a></li>
+      <li><a href="#navod">Návod k použití</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="myslenka">1. Hlavní myšlenka</h2>
+  <div class="idea">
+    <p><b>Spotřeba je součet příspěvků, ne součin koeficientů.</b> Každý příspěvek má vlastní příčinu (rozvrh lidí, tma, zima, horko, slunce na panelech), vlastní vstup a vlastní jednotky spotřeby. Proto jde každý ukázat zvlášť, zkontrolovat zdravým rozumem a opravit, aniž se rozbije zbytek.</p>
+  </div>
+  <div class="eq" id="eq">spotřeba(t) = rozvrh a kalendář(t) + svícení(t) + topení(t) + chlazení(t) − výroba FVE(t) + chyba(t)</div>
+  <p>Běžné statistické modely berou typový diagram a násobí ho koeficienty za teplotu, den v týdnu a sezónu. Takový model může být přesný, ale neřekne, <em>proč</em> je zítra spotřeba vyšší, a násobené korekce se navzájem ovlivňují. Tady se příspěvky sčítají: topení v lednu večer je počet jednotek navíc, který zmizí, když se oteplí, bez ohledu na to, jaký je den.</p>
+  <p>Druhá zásada: <b>co má vysvětlení, patří do modelu; co ho nemá, do korekce.</b> Strukturální odchylky (Vánoce, mosty, ráno po víkendu, svícení za šera) dostaly vlastní člen. Pomalý drift, který vysvětlit neumíme, opravuje oddělená vrstva z posledních chyb — a model sám se jí nemění.</p>
+
+  <div class="flow" aria-label="Schéma výpočtu">
+    <div class="col"><h4>Vstupy</h4>
+      <div class="box"><b>Kalendář</b><span>typ dne, svátky, mosty, prázdniny</span></div>
+      <div class="box"><b>Poloha slunce</b><span>astronomicky, bez měření</span></div>
+      <div class="box"><b>Počasí</b><span>teplota, osvit, vítr — měření a předpověď</span></div>
+      <div class="box"><b>Spotřeba</b><span>15min měření do konce dat</span></div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="col"><h4>Příspěvky modelu</h4>
+      <div class="box term" style="--c: var(--series-1)"><b>Rozvrh a kalendář</b><span>úroveň, denní profil, svátky, léto</span></div>
+      <div class="box term" style="--c: var(--series-4)"><b>Svícení</b><span>za tmy a při zatažené obloze</span></div>
+      <div class="box term" style="--c: var(--series-2)"><b>Topení</b><span>teplota se setrvačností budov</span></div>
+      <div class="box term" style="--c: var(--series-3)"><b>Chlazení</b><span>zrcadlově k topení</span></div>
+      <div class="box term" style="--c: var(--series-6)"><b>− Výroba FVE</b><span>kapacita × osvit</span></div>
+    </div>
+    <div class="arrow">→</div>
+    <div class="col"><h4>Výsledek</h4>
+      <div class="box"><b>Model</b><span>součet příspěvků</span></div>
+      <div class="box"><b>+ Korekce</b><span>z chyb posledních hodin a dnů</span></div>
+      <div class="box out"><b>Predikce</b><span>po 15 minutách</span></div>
+    </div>
+  </div>
+
+  <figure>
+    <div class="controls" id="week-btns"></div>
+    <div id="f-week" class="chart tall"></div>
+    <figcaption id="week-cap"></figcaption>
+  </figure>
+
+  <h2 id="slozky">2. Složky modelu</h2>
+
+  <h3>Rozvrh a kalendář</h3>
+  <p>Základ spotřeby, který nezávisí na počasí. Má dvě části: <b>úroveň</b>, která se mění pomalu (velikost portfolia, dlouhodobé trendy), a <b>denní profil</b>, tedy odchylku od úrovně podle hodiny.</p>
+  <p>Profil se liší podle <b>typu dne</b>. Typ není den v týdnu, ale role dne v bloku volna: pracovní den před pracovním dnem, pracovní den před volnem (pátek, ale i čtvrtek před pátečním svátkem), volno před volnem (sobota) a volno před pracovním dnem (neděle, Velikonoční pondělí). Svátky tak přebírají profily naučené ze stovek víkendů.</p>
+  <div class="pair">
+    <figure><div id="f-level" class="chart"></div><figcaption>Úroveň portfolia v čase — základ spotřeby bez počasí a denního profilu.</figcaption></figure>
+    <figure><div id="f-profile" class="chart"></div><figcaption>Denní profil rozvrhu podle typu dne (odchylka od úrovně).</figcaption></figure>
+  </div>
+  <p>Nad profilem jsou menší kalendářní členy, každý s vlastním denním tvarem: letní prázdniny a jejich průběh (nejhlubší na přelomu července a srpna), mosty (pracovní den sevřený volnem), Vánoce rozdělené na skupiny dnů (Štědrý den, svátky, dny mezi svátky, Silvestr, Nový rok) a ráno prvního pracovního dne po volnu, kdy se spotřeba rozjíždí pomaleji. Kalendář se nastavuje v <code>config/kalendar.yaml</code>.</p>
+
+  <h3>Svícení: hodiny a slunce jsou dva různé procesy</h3>
+  <p>Část spotřeby se neřídí hodinami, ale světlem. Ukázala to změna času: při posunu hodin se asi 43 jednotek spotřeby posunulo se soumrakem, zatímco rozvrh zůstal na hodinách. Model má proto dva členy:</p>
+  <ul>
+    <li><b>Osvětlení za tmy</b> — tma se počítá astronomicky z polohy slunce, takže je známá na libovolnou dobu dopředu. Člen působí jen v oknech úsvitu a soumraku, kde se tma během roku mění.</li>
+    <li><b>Svícení při zatažené obloze</b> — ve dne při nízkém osvitu (těžká oblačnost, mlha) je spotřeba vyšší než za jasného dne se stejnou teplotou. Tento člen závisí na počasí.</li>
+  </ul>
+  <figure><div id="f-light" class="chart"></div><figcaption>Spotřeba na svícení podle hodiny: při plné tmě a při zcela zatažené obloze ve dne.</figcaption></figure>
+
+  <h3>Topení</h3>
+  <p>Topení reaguje na teplotu ve třech krocích:</p>
+  <ol>
+    <li><b>Pocitová teplota</b>: venkovní teplota zvýšená o solární zisky (osvit) a snížená o vítr.</li>
+    <li><b>Setrvačnost budov</b>: budova nereaguje na teplotu hned. Model míchá okamžitou teplotu s teplotou vyhlazenou přes několik dní; výsledkem je teplota, kterou topení „cítí“.</li>
+    <li><b>Topná křivka</b>: pod bilanční teplotou spotřeba roste přibližně lineárně, nad ní topení plynule doznívá. U tepelných čerpadel navíc s mrazem klesá účinnost.</li>
+  </ol>
+  <div class="eq">pocitová T   = T + a · osvit − b · vítr · (20 − T)
+T*           = w · pocitová T + (1 − w) · klouzavý průměr(pocitová T; τ)
+topení(t)    = citlivost(hodina, typ dne, rok) · hladká rampa(T_b − T*) / účinnost(T)</div>
+  <figure><div id="f-inertia" class="chart"></div><figcaption id="inertia-cap"></figcaption></figure>
+  <div class="pair">
+    <figure><div id="f-response" class="chart"></div><figcaption>Odezva na teplotu v ustáleném stavu (průměr pracovního dne, bez osvitu a větru).</figcaption></figure>
+    <figure><div id="f-kheat" class="chart"></div><figcaption>Topná citlivost podle hodiny: spotřeba na 1 °C pod bilanční teplotou.</figcaption></figure>
+  </div>
+  <p>Citlivost na teplotu se během dne mění (v noci se topí méně) a v čase roste: portfolio za sledované období přidalo topnou zátěž, pravděpodobně tepelná čerpadla. Model tento přírůstek sleduje jako pomalu se měnící člen s vlastním denním tvarem.</p>
+  <figure><div id="f-ktrend" class="chart"></div><figcaption>Topná citlivost v čase (průměr dne, spotřeba na 1 °C).</figcaption></figure>
+
+  <h3>Chlazení</h3>
+  <p>Zrcadlový protějšek topení: nad bilanční teplotou chlazení spotřeba roste, opět přes setrvačnost budov a s citlivostí podle hodiny a typu dne. Data ukázala dvě věci, které se nečekaly: setrvačnost u chlazení je jen o něco kratší než u topení a mezi bilančními teplotami topení a chlazení není široké mrtvé pásmo — obě leží blízko sebe a přechody se překrývají.</p>
+
+  <h3>Výroba FVE</h3>
+  <p>Střešní elektrárny v portfoliu měřenou spotřebu snižují. Člen je součin instalované kapacity, osvitu a teplotní korekce panelů. Kapacita se odhaduje z dat jako křivka, která smí jen růst — instalace přibývají, neubývají.</p>
+  <figure><div id="f-pv" class="chart"></div><figcaption id="pv-cap"></figcaption></figure>
+
+  <h2 id="odhad">3. Jak se model odhaduje</h2>
+  <p>Model má dva druhy parametrů a odhadují se společně z celé historie:</p>
+  <div class="wrap"><table>
+    <thead><tr><th>Druh</th><th>Počet</th><th class="l">Co popisují</th><th class="l">Jak často se přeučují</th></tr></thead>
+    <tbody>
+      <tr><td>Fyzikální (tvar křivek)</td><td id="n-phys"></td><td class="l">bilanční teploty, šířky přechodu, setrvačnost, vliv osvitu a větru, účinnost</td><td class="l">jednou týdně (asi 45 s)</td></tr>
+      <tr><td>Lineární koeficienty</td><td id="n-lin"></td><td class="l">úroveň, denní profily, kalendářní členy, citlivosti podle hodiny, kapacita FVE</td><td class="l">jednou denně (asi 7 s)</td></tr>
+    </tbody>
+  </table></div>
+  <p>Pro dané fyzikální parametry je model v ostatních koeficientech lineární, takže se řeší přímo. Hledání se tak omezí na malý počet čísel s jasným významem. Všechny složky se odhadují <b>najednou</b>: osvit je vstupem tří členů (solární zisky u topení, svícení, FVE) a při postupném odhadu by si první člen vzal i to, co patří dalším.</p>
+  <p>Tři pojistky drží odhad rozumný: fyzikální parametry mají meze a slabé výchozí očekávání, pomalé křivky (úroveň, kapacita FVE, trend topení) mají penalizaci za prudké změny a osvětlení i kapacita FVE nesmějí být záporné.</p>
+  <p id="fit-quality"></p>
+
+  <h2 id="predikce">4. Od modelu k predikci</h2>
+  <p>Model sám nezná poslední měření spotřeby — počítá jen z kalendáře, slunce a počasí. Predikce vzniká ve třech krocích:</p>
+  <ol>
+    <li><b>Počasí</b>: do konce dat naměřené, dál předpověď. Předpověď se nejdřív srovná se stanicí: z oblačnosti se odvodí osvit a odečte se soustavná odchylka teploty a větru z posledních 30 dní.</li>
+    <li><b>Model</b>: součet příspěvků na každou čtvrthodinu dopředu.</li>
+    <li><b>Korekce</b>: odhad chyby modelu z toho, jak se mýlil v poslední hodině, za posledních 24 hodin a ve stejnou denní dobu v minulých dnech — a z toho, jak se mýlila předpověď počasí. Váha poslední hodiny s délkou horizontu rychle klesá, váha denního tvaru roste.</li>
+  </ol>
+  <p>Stejný model slouží třem horizontům:</p>
+  <div class="wrap"><table>
+    <thead><tr><th>Horizont</th><th class="l">Počasí</th><th class="l">Korekce</th><th class="l">Skript</th></tr></thead>
+    <tbody>
+      <tr><td>hodiny (intraday)</td><td class="l">měření + předpověď</td><td class="l">podle horizontu, z posledních čtvrthodin</td><td class="l"><code>predikce.py</code></td></tr>
+      <tr><td>den dopředu (D+1)</td><td class="l">předpověď</td><td class="l">z chyb předchozích dnů</td><td class="l"><code>predikce.py</code></td></tr>
+      <tr><td>rok dopředu</td><td class="l">normál nebo scénáře z historických let</td><td class="l">žádná</td><td class="l"><code>explore/dlouhodoba.py</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="presnost">5. Přesnost</h2>
+  <p>Přesnost se měří zpětnou simulací: model se pro každý den posledního roku odhadne jen z dat, která by v tu chvíli byla k dispozici, a jeho predikce se porovná se skutečností. RMSE je v jednotkách spotřeby, MAPE v procentech.</p>
+  <div id="acc-d1"></div>
+  <figure id="acc-fig"><div id="f-horizon" class="chart"></div><figcaption>Chyba predikce podle horizontu od konce dat (RMSE čtvrthodinových hodnot, poslední rok). Přerušované čáry: model bez korekce.</figcaption></figure>
+  <p>Největším zdrojem chyby je předpověď počasí: s naměřeným počasím je chyba o čtvrtinu až třetinu menší. Korekce z posledních měření pomáhá hlavně v prvních třech hodinách.</p>
+  <p>U predikce na rok dopředu vyšla dopředná validace na třech letech takto: při známém počasí MAPE 1,6–2,2 %, bez znalosti počasí kolem 4 % u čtvrthodin a 1,5–3,4 % u měsíčních objemů.</p>
+
+  <h2 id="omezeni">6. Co model neumí</h2>
+  <ul>
+    <li><b>Rozklad je přiřazení podle modelu, ne měření.</b> Složky se sdíleným vstupem (osvit u FVE, svícení a solárních zisků; večerní špička u osvětlení a topení) od sebe odděluje jen struktura modelu.</li>
+    <li><b>Změny portfolia nepředvídá.</b> Úroveň, kapacita FVE a topná citlivost za koncem dat drží poslední hodnotu (nebo pokračují posledním trendem u roční predikce). Skokovou změnu zachytí až z nových dat.</li>
+    <li><b>Baterie nejsou v portfoliu měřitelné</b>, model pro ně člen nemá.</li>
+    <li><b>Některé parametry data neurčují.</b> Vliv osvitu na chlazení a pokles účinnosti klimatizací vycházejí nulové; teplotní koeficient FVE je držen na fyzikální hodnotě.</li>
+    <li><b>Vánoce a jejich okolí</b> mají vyšší chybu než zbytek roku — učí se z mála let.</li>
+    <li><b>Přesnost čerstvé předpovědi počasí</b> s předstihem kratším než den nebylo z čeho ověřit; ukáže ji až provoz.</li>
+  </ul>
+
+  <h2 id="pruhlednost">7. Průhlednost a zásahy</h2>
+  <p>Všechno, co do výpočtu vstupuje, je čitelné a dá se změnit:</p>
+  <div class="wrap"><table>
+    <thead><tr><th class="l">Soubor</th><th class="l">Obsah</th><th class="l">Zásah</th></tr></thead>
+    <tbody>
+      <tr><td><code>config/model.yaml</code></td><td class="l">ručně zvolené konstanty; u fyzikálních parametrů popis, meze, výchozí očekávání</td><td class="l"><code>pevna:</code> drží parametr trvale na zadané hodnotě</td></tr>
+      <tr><td><code>config/kalendar.yaml</code></td><td class="l">svátky, mosty, prázdniny, vánoční skupiny dnů</td><td class="l">úprava kalendáře</td></tr>
+      <tr><td><code>provoz/parametry.yaml</code></td><td class="l">aktuálně odhadnuté fyzikální parametry</td><td class="l">ruční přepsání hodnoty platí do příštího týdenního přeučení</td></tr>
+      <tr><td><code>provoz/vysvetleni.html</code></td><td class="l">rozklad poslední predikce na složky, křivky modelu</td><td class="l">jen ke čtení</td></tr>
+    </tbody>
+  </table></div>
+  <p>Lineární koeficienty v žádném souboru k úpravě nejsou — jsou to koeficienty křivek a čitelné jsou jen jako křivky, které ukazují obrázky výše. Aktuální fyzikální parametry:</p>
+  <div class="wrap"><table id="params"><thead><tr><th class="l">Parametr</th><th>Hodnota</th><th class="l">Jednotka</th><th class="l">Význam</th><th class="l">Původ</th></tr></thead><tbody></tbody></table></div>
+
+  <h2 id="navod">8. Návod k použití</h2>
+  <ol class="steps">
+    <li><h3>Příprava prostředí</h3>
+      <p>Projekt používá <code>uv</code>; závislosti jsou uzamčené, prostředí se vytvoří jedním příkazem v kořeni projektu.</p>
+      <pre><code>uv sync</code></pre></li>
+    <li><h3>Vstupní data</h3>
+      <p>Složka <code>Data/</code> (není v repozitáři). Oba soubory jsou v místním čase, s oddělovačem <code>;</code> a desetinnou čárkou, časová značka ve tvaru <code>01.01.2022 0:15</code>.</p>
+      <div class="wrap"><table>
+        <thead><tr><th class="l">Soubor</th><th class="l">Sloupce</th><th class="l">Obsah</th></tr></thead>
+        <tbody>
+          <tr><td><code>Data/baseload.csv</code></td><td class="l"><code>timestamp;baseline</code></td><td class="l">čtvrthodinová spotřeba portfolia</td></tr>
+          <tr><td><code>Data/Meteo15.csv</code></td><td class="l"><code>timestamp;sun;wind;temp</code></td><td class="l">osvit [W/m²], vítr [m/s], teplota [°C] ze stanice</td></tr>
+          <tr><td><code>Analyza/ArchivMeteo.xlsx</code></td><td class="l">čas, teplota, oblačnost [%], vítr</td><td class="l">hodinová předpověď počasí; nové předpovědi se přidávají na konec</td></tr>
+        </tbody>
+      </table></div>
+      <p>Soubory se čtou pokaždé celé (asi 1,3 s), takže se mohou průběžně přepisovat včetně zpětných oprav. Konec dat je poslední čtvrthodina, kde je kladná spotřeba i změřené počasí.</p></li>
+    <li><h3>Vydání predikce</h3>
+      <p>Jeden příkaz, spouštěný po příchodu nového měření (například každých 15 minut):</p>
+      <pre><code>uv run python predikce.py</code></pre>
+      <p>První běh model odhadne od nuly (asi 2 minuty). Další běhy trvají 1–3 s; skript sám pozná, kdy je čas na denní nebo týdenní přeučení. Užitečné volby:</p>
+      <div class="wrap"><table>
+        <thead><tr><th class="l">Volba</th><th class="l">Význam</th></tr></thead>
+        <tbody>
+          <tr><td><code>--otevrit</code></td><td class="l">otevře graf rozkladu v prohlížeči</td></tr>
+          <tr><td><code>--bez-grafu</code></td><td class="l">nevytváří graf (rychlejší, menší výstup)</td></tr>
+          <tr><td><code>--prefit=tvar|linearni|ne</code></td><td class="l">vynutí nebo zakáže přeučení</td></tr>
+          <tr><td><code>--konec="2026-07-20 12:00"</code></td><td class="l">přehraje minulý okamžik (data jen před tímto časem)</td></tr>
+          <tr><td><code>--out=slozka</code></td><td class="l">jiná složka stavu a výstupů</td></tr>
+        </tbody>
+      </table></div></li>
+    <li><h3>Výstupy</h3>
+      <p>Ve složce <code>provoz/</code>:</p>
+      <div class="wrap"><table>
+        <thead><tr><th class="l">Soubor</th><th class="l">Obsah</th></tr></thead>
+        <tbody>
+          <tr><td><code>predikce.csv</code></td><td class="l">poslední predikce po 15 minutách: složky, model, korekce, výsledek</td></tr>
+          <tr><td><code>archiv/</code></td><td class="l">všechny vydané predikce, pro pozdější vyhodnocení</td></tr>
+          <tr><td><code>rozklad.csv</code></td><td class="l">složky za posledních 14 dní a predikci, spotřeba očištěná o počasí</td></tr>
+          <tr><td><code>vysvetleni.html</code></td><td class="l">graf rozkladu a křivky modelu</td></tr>
+          <tr><td><code>parametry.yaml</code></td><td class="l">fyzikální parametry, se kterými se právě počítá</td></tr>
+        </tbody>
+      </table></div></li>
+    <li><h3>Zásah do parametru</h3>
+      <p><b>Jednorázově:</b> přepište hodnotu v <code>provoz/parametry.yaml</code> a spusťte <code>predikce.py</code>. Skript hodnotu převezme a zbytek modelu k ní dopočítá. Úprava vydrží do příštího týdenního přeučení.</p>
+      <p><b>Trvale:</b> doplňte parametru v <code>config/model.yaml</code> řádek <code>pevna:</code>.</p>
+      <pre><code>t_b:
+  popis: "bilanční teplota topení — pod ní se začíná topit"
+  meze: [10.0, 18.0]
+  pevna: 17.0</code></pre>
+      <p>Dopad zásahu na přesnost ukáže zpětná simulace (další krok). Položky označené <code>[struktura]</code> mění počet koeficientů; po jejich změně smažte <code>provoz/parametry.pkl</code> a nechte model odhadnout znovu.</p></li>
+    <li><h3>Zpětná simulace</h3>
+      <p>Ověření přesnosti na posledním roce. Druhý příkaz zároveň obnoví koeficienty korekce, které používá <code>predikce.py</code>; vyplatí se ho pustit po větší změně modelu nebo jednou za čas.</p>
+      <pre><code>uv run python explore/backtest.py --meteo=predpoved --out=simulace/d1_predpoved
+uv run python explore/intraday.py --meteo=predpoved --out=simulace/intraday_predpoved</code></pre>
+      <p>Každý běh trvá 7–11 minut a výsledky ukládá do zvolené složky; první z nich otevře graf.</p></li>
+    <li><h3>Predikce na rok a pohledy do historie</h3>
+      <pre><code>uv run python explore/dlouhodoba.py --pocasi=scenare --parametry=provoz
+uv run python explore/ocistena.py
+uv run python explore/dokumentace.py</code></pre>
+      <p>První vydá predikci na 365 dní s pásmem nejistoty a porovnáním se skutečností před rokem, druhý historii spotřeby bez topení a chlazení, třetí znovu vytvoří tuto dokumentaci s aktuálními obrázky.</p></li>
+    <li><h3>Použití na jiných datech</h3>
+      <p>Model má jednu konfiguraci a jednu složku dat. Před použitím na jiném portfoliu zkontrolujte v <code>config/model.yaml</code> zeměpisnou polohu, pásmo mírných dnů a výchozí očekávání fyzikálních parametrů a v <code>config/kalendar.yaml</code> svátky a prázdniny. Po prvním odhadu se podívejte do <code>provoz/parametry.yaml</code>, které parametry skončily na mezi.</p></li>
+  </ol>
+  <p class="note">Podrobný průběh vývoje, zamítnuté hypotézy a výsledky jednotlivých kroků jsou v souboru <code>NAVRH_MODELU.md</code>.</p>
+</main>
+<script>
+const D = /*__DATA__*/null;
+const M = D.meta, C = D.curves;
+const fmt = (v, d = 1) => v === null || v === undefined ? "–"
+  : v.toLocaleString("cs-CZ", { minimumFractionDigits: d, maximumFractionDigits: d });
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
+const $ = id => document.getElementById(id);
+
+$("meta").textContent = `Data ${M.od} až ${M.do} (${fmt(M.intervalu, 0)} čtvrthodin, spotřeba ${fmt(M.min, 0)}–${fmt(M.max, 0)}, průměr ${fmt(M.prumer, 0)}). `
+  + `Obrázky ukazují stav modelu k ${M.stav}. Vytvořeno ${M.vytvoreno}.`;
+$("n-phys").textContent = M.n_fyzikalni;
+$("n-lin").textContent = M.n_linearni;
+$("fit-quality").textContent = `Na celé historii model vysvětluje ${fmt(100 * M.r2, 1)} % rozptylu čtvrthodinové spotřeby se střední chybou ${fmt(M.rmse_trenink)} jednotek. `
+  + "Ověření mimo vzorek (odhad bez jednoho roku, predikce na něj) ukázalo, že nejde o přeučení: parametry tvaru vycházejí napříč roky stabilně.";
+
+function axis() {
+  const ink = css("--text-secondary"), muted = css("--text-muted"), base = css("--baseline");
+  return { gridcolor: css("--grid"), linecolor: base, zerolinecolor: base, tickfont: { color: muted, size: 11 },
+    title: { font: { color: ink, size: 12 }, standoff: 8 } };
+}
+function frame(extra) {
+  return { paper_bgcolor: css("--surface"), plot_bgcolor: css("--surface"),
+    font: { family: "system-ui, -apple-system, Segoe UI, sans-serif", color: css("--text-primary") },
+    margin: { l: 52, r: 12, t: 8, b: 44 }, hovermode: "x unified",
+    hoverlabel: { bgcolor: css("--surface-2"), bordercolor: css("--border"), font: { color: css("--text-primary") } },
+    legend: { orientation: "h", traceorder: "normal", y: 1.02, yanchor: "bottom", x: 0, font: { color: css("--text-secondary"), size: 12 } },
+    ...extra };
+}
+const CFG = { responsive: true, displaylogo: false, displayModeBar: false, locale: "cs" };
+const plots = [];
+// cary: series = [popisek, y, barva, {dash}], xa/ya = nastaveni os
+function lines(id, x, series, xa = {}, ya = {}) {
+  const tr = () => series.map(([name, y, col, st = {}]) => ({ x, y, name, type: "scatter", mode: "lines",
+    line: { color: css(col), width: 2, ...st }, hovertemplate: "%{y:.1f}" }));
+  const ly = () => frame({ showlegend: series.length > 1,
+    xaxis: { ...axis(), ...xa, title: { ...axis().title, text: xa.text || "" } },
+    yaxis: { ...axis(), ...ya, title: { ...axis().title, text: ya.text || "" } } });
+  plots.push([$(id), tr, ly]);
+}
+const DT = ["pracovní den", "před volnem (pátek)", "volno před volnem (sobota)", "volno před prací (neděle)"];
+const DTC = ["--series-1", "--series-2", "--series-3", "--series-4"];
+const HOUR = { text: "Hodina dne", dtick: 3, range: [0, 24] };
+const DATEAX = { hoverformat: "%d.%m.%Y %H:%M", tickformatstops: [{ dtickrange: [null, 86400000], value: "%H:%M<br>%d.%m." }, { dtickrange: [86400000, null], value: "%d.%m." }] };
+
+// tyden rozlozeny na slozky (zima / leto)
+let which = "zima";
+const AREAS = [["kal", "Rozvrh a kalendář", "--series-1"], ["topeni", "Topení", "--series-2"], ["chlazeni", "Chlazení", "--series-3"],
+  ["osvetleni", "Osvětlení za tmy", "--series-4"], ["sero", "Svícení při zatažené obloze", "--series-5"]];
+const weekTr = () => {
+  const W = D[which], surf = css("--surface"), out = [];
+  for (const [key, name, col] of AREAS)
+    out.push({ x: W.t, y: W[key], name, type: "scatter", mode: "lines", stackgroup: "plus", line: { color: surf, width: 1.5 },
+      fillcolor: rgba(css(col), 0.85), hovertemplate: "%{y:.1f}" });
+  out.push({ x: W.t, y: W.fve, name: "Výroba FVE", type: "scatter", mode: "lines", stackgroup: "minus", line: { color: surf, width: 1.5 },
+    fillcolor: rgba(css("--series-6"), 0.85), hovertemplate: "%{y:.1f}" });
+  out.push({ x: W.t, y: W.model, name: "Model (součet)", type: "scatter", mode: "lines", line: { color: css("--series-7"), width: 2 }, hovertemplate: "%{y:.1f}" });
+  out.push({ x: W.t, y: W.skutecnost, name: "Skutečnost", type: "scatter", mode: "lines", line: { color: css("--text-primary"), width: 1.5 }, hovertemplate: "%{y:.1f}" });
+  return out;
+};
+const weekLy = () => frame({ xaxis: { ...axis(), ...DATEAX }, yaxis: { ...axis(), title: { ...axis().title, text: "Spotřeba" } } });
+plots.push([$("f-week"), weekTr, weekLy]);
+const cz = t => `${t.slice(8, 10)}.${t.slice(5, 7)}.${t.slice(0, 4)}`;
+function weekCap() {
+  const W = D[which];
+  $("week-cap").textContent = `Týden od ${cz(W.t[0])} (průměrná teplota ${fmt(W.teplota)} °C): plochy se sčítají odspodu, výroba FVE jde pod nulu. `
+    + "Fialová čára je součet všech ploch, tenká čára skutečná spotřeba.";
+}
+for (const [key, label] of [["zima", "Nejchladnější týden"], ["leto", "Nejteplejší týden"]]) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.setAttribute("aria-pressed", String(key === which));
+  b.onclick = () => { which = key; [...$("week-btns").children].forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    Plotly.react($("f-week"), weekTr(), weekLy()); weekCap(); };
+  $("week-btns").append(b);
+}
+weekCap();
+
+const YEARS = { tickformat: "%Y", dtick: "M12", hoverformat: "%d.%m.%Y" };
+lines("f-level", C.tyden, [["Úroveň", C.uroven, "--series-1"]], YEARS);
+lines("f-profile", C.hodina, C.profil.map((y, k) => [DT[k], y, DTC[k]]), HOUR);
+lines("f-light", C.hodina, [["Osvětlení za tmy", C.osvetleni, "--series-4"], ["Při zatažené obloze", C.sero, "--series-5"]], HOUR, { text: "Spotřeba" });
+const I = D.setrvacnost;
+lines("f-inertia", I.t, [["Venkovní teplota", I.teplota, "--series-1", { width: 1.5 }], ["Teplota, kterou cítí topení", I.pocitova, "--series-2"]], DATEAX, { text: "°C" });
+$("inertia-cap").textContent = `Ochlazení kolem ${cz(I.t[Math.round(I.t.length * 0.4)])}: teplota, kterou „cítí“ topení, sleduje venkovní teplotu se zpožděním a bez denních výkyvů — budovy se vychlazují několik dní. `
+  + "Proto je první chladný den spotřeba nižší, než by odpovídalo teploměru, a po oteplení se ještě chvíli topí víc.";
+lines("f-response", C.teplota, [["Topení", C.topeni_T, "--series-2"], ["Chlazení", C.chlazeni_T, "--series-3"]], { text: "Venkovní teplota [°C]" }, { text: "Spotřeba" });
+lines("f-kheat", C.hodina, C.k_topeni.map((y, k) => [DT[k], y, DTC[k]]), HOUR);
+lines("f-ktrend", C.tyden, [["Topná citlivost", C.topna_citlivost, "--series-2"]], YEARS);
+lines("f-pv", C.tyden, [["Špičková výroba FVE", C.fve_spicka, "--series-6"]], YEARS);
+$("pv-cap").textContent = `Špičková výroba FVE v čase (při osvitu ${fmt(M.fve_osvit, 0)} W/m²) — odhad instalované kapacity v jednotkách spotřeby.`;
+
+// presnost D+1
+if (D.backtests.length) {
+  const rows = D.backtests.map(b => `<tr><td>${b.rezim}</td><td>${fmt(b.model_rmse)}</td><td>${fmt(b.model_mape, 2)} %</td><td>${fmt(b.kor_rmse)}</td><td>${fmt(b.kor_mape, 2)} %</td></tr>`).join("");
+  $("acc-d1").innerHTML = `<p><b>Predikce na den dopředu</b> (vydání v 10:00 z dat do 9:00, poslední rok):</p><div class="wrap"><table>
+    <thead><tr><th>Počasí v simulaci</th><th>Model: RMSE</th><th>MAPE</th><th>S korekcí: RMSE</th><th>MAPE</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+if (D.horizons) {
+  const H = D.horizons, a = H["naměřené počasí"], b = H["předpověď počasí"];
+  lines("f-horizon", a.h, [
+    ["S korekcí, předpověď počasí", b.kor, "--series-2"], ["S korekcí, naměřené počasí", a.kor, "--series-1"],
+    ["Model, předpověď počasí", b.model, "--series-2", { dash: "dash", width: 1.5 }], ["Model, naměřené počasí", a.model, "--series-1", { dash: "dash", width: 1.5 }]],
+    { text: "Horizont od konce dat [h]", dtick: 1 }, { text: "RMSE", rangemode: "tozero" });
+} else $("acc-fig").hidden = true;
+
+const tb = document.querySelector("#params tbody");
+for (const p of D.params) {
+  const tr = tb.insertRow();
+  for (const [v, cls] of [[p.nazev, ""], [p.hodnota, ""], [p.jednotka, "l"], [p.popis, "l"], [p.puvod, "l"]]) { const td = tr.insertCell(); if (cls) td.className = cls; td.textContent = v; }
+}
+
+// kreslit az po sestaveni stranky (sirky sloupcu)
+plots.forEach(([el, tr, ly]) => { if (el && !el.closest("[hidden]")) Plotly.newPlot(el, tr(), ly(), CFG); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () =>
+  plots.forEach(([el, tr, ly]) => { if (el && !el.closest("[hidden]")) Plotly.react(el, tr(), ly()); }));
+</script>
+</body>
+</html>
