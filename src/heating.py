@@ -36,25 +36,25 @@ import pandas as pd
 from etl import step_hours
 from scipy.optimize import least_squares
 
+import config
 import pv
 
-K_TOD = 4        # harmonickych v k(cas dne)
-K_TOD_OFF = 4    # harmonickych v odchylce k pro volne dny (typ dne 2, 3)
-TREND_K_TOD = 2  # harmonickych v dennim tvaru prirustku citlivosti
-T_IN = 20.0      # vnitrni teplota pro vetrny clen [C]
-COP_FLOOR = 0.2
+_C = config.model()["topeni"]            # hodnoty v config/model.yaml
+K_TOD = _C["harmonicke"]                 # harmonickych v k(cas dne)
+K_TOD_OFF = _C["harmonicke_volne_dny"]   # harmonickych v odchylce k pro volne dny (typ dne 2, 3)
+TREND_K_TOD = _C["harmonicke_trend"]     # harmonickych v dennim tvaru prirustku citlivosti
+T_IN = _C["vnitrni_teplota"]             # vnitrni teplota pro vetrny clen [C]
+COP_FLOOR = _C["cop_minimum"]
 N_DAYTYPES = 4
 
-# poradi nelinearnich parametru a jejich meze
+# poradi nelinearnich parametru; meze, start a prior z config/model.yaml
 PARAM_NAMES = ["a", "b", "t_b", "s", "w", "tau", "alpha"]
-LOWER = np.array([0.0, 0.0, 10.0, 0.5, 0.0, 4.0, 0.0])
-UPPER = np.array([0.05, 0.03, 18.0, 6.0, 1.0, 120.0, 0.06])
-X0 = np.array([0.01, 0.005, 14.5, 2.5, 0.5, 36.0, 0.02])
+LOWER, UPPER, X0 = config.bounds("topeni", PARAM_NAMES)
 # slaby prior (stred, sm. odchylka) pro joint fit: s trendem topeni s dennim
 # tvarem a vanocnimi cleny se tvar krivky posouval po temer plochem udoli
 # (s -> horni mez, T_b dolu, alpha -> 0) a fit trval desitky minut. Hodnoty z
 # validace mimo vzorek (T_b 17,5-18, s 1,8-2,9, tau 63-87 h).
-PRIOR = {"t_b": (17.0, 1.5), "s": (2.0, 1.0), "tau": (80.0, 20.0), "alpha": (0.012, 0.008)}
+PRIOR = config.priors("topeni")
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 

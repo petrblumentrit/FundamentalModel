@@ -26,11 +26,13 @@ Prvnich WARMUP dni bez korekce.
 import numpy as np
 import pandas as pd
 
+import config
 import etl
 
-SHAPE_DAYS = 7
-WARMUP = 21        # minimalni pocet znamych cilovych dni pro odhad
-RIDGE = 1e-3       # relativne ke stope X'X
+_C = config.model()["korekce"]["d1"]     # hodnoty v config/model.yaml
+SHAPE_DAYS = _C["tvar_dni"]
+WARMUP = _C["rozjezd_dni"]   # minimalni pocet znamych cilovych dni pro odhad
+RIDGE = _C["ridge"]       # relativne ke stope X'X
 FEATURES = ("x1", "x2", "x3")
 
 

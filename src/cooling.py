@@ -21,20 +21,20 @@ import pandas as pd
 
 from etl import step_hours
 
+import config
 from heating import softplus
 
-K_TOD = 4          # harmonickych v k_c(cas dne)
-K_TOD_OFF = 4      # harmonickych v odchylce k_c pro volne dny (jako u topeni)
+_C = config.model()["chlazeni"]          # hodnoty v config/model.yaml
+K_TOD = _C["harmonicke"]                 # harmonickych v k_c(cas dne)
+K_TOD_OFF = _C["harmonicke_volne_dny"]   # harmonickych v odchylce k_c pro volne dny (jako u topeni)
 N_DAYTYPES = 4
-T_REF = 25.0
-EER_FLOOR = 0.3
+T_REF = _C["referencni_teplota"]
+EER_FLOOR = _C["eer_minimum"]
 
 PARAM_NAMES = ["a_c", "t_bc", "s_c", "w_c", "tau_c", "alpha_c"]
-LOWER = np.array([0.0, 16.0, 0.5, 0.0, 0.25, 0.0])
-UPPER = np.array([0.10, 26.0, 6.0, 1.0, 72.0, 0.06])
-X0 = np.array([0.02, 21.0, 2.0, 0.5, 6.0, 0.02])
+LOWER, UPPER, X0 = config.bounds("chlazeni", PARAM_NAMES)
 # slaby prior pro joint fit (viz heating.PRIOR); validace: T_bc 17,1-18,7, s_c 2,1-2,4
-PRIOR = {"t_bc": (18.0, 1.5), "s_c": (2.0, 1.0)}
+PRIOR = config.priors("chlazeni")
 
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 

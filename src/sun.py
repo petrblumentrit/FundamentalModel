@@ -8,10 +8,13 @@ soumrakem, rozvrh zustava na hodinach).
 import numpy as np
 import pandas as pd
 
-LAT, LON = 49.8, 15.5        # stred CR
-DARK_MID = -2.0              # [deg] vyska slunce, kde je "pul tmy"
-DARK_WIDTH = 1.5             # [deg] sirka prechodu (soumrak trva ~30-40 min)
-GLOOM_I0 = 40.0              # [W/m2] osvit, pri kterem sero pres den klesne na 1/e
+import config
+
+_C = config.model()["slunce"]            # config/model.yaml
+LAT, LON = _C["zemepisna_sirka"], _C["zemepisna_delka"]   # stred CR
+DARK_MID = _C["tma_stred"]               # [deg] vyska slunce, kde je "pul tmy"
+DARK_WIDTH = _C["tma_sirka"]             # [deg] sirka prechodu (soumrak trva ~30-40 min)
+GLOOM_I0 = _C["sero_osvit"]              # [W/m2] osvit, pri kterem sero pres den klesne na 1/e
 
 
 def _solar(ts_utc: pd.DatetimeIndex):

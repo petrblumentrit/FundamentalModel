@@ -17,6 +17,7 @@ import pandas as pd
 from scipy.optimize import least_squares, lsq_linear
 
 import base
+import config
 import cooling
 import heating
 import pv
@@ -48,14 +49,14 @@ def bounded_lstsq(A: np.ndarray, y: np.ndarray, lb: np.ndarray, ub: np.ndarray,
 # validace mimo vzorek ukazala, ze posledni rampa pred koncem okna (v zime bez
 # slunce) dostava skok +30 jednotek — 5.0 ho potlaci, in-sample RMSE nemeni
 # (18.66 -> 18.68), dopredna chyba roku 2026 klesa 20.0 -> 19.0; vic uz nepomaha
-PV_SMOOTH = 5.0
+PV_SMOOTH = config.model()["fve"]["kapacita_hladkost"]
 # penalizace zmen tempa prirustku topne citlivosti (relativne k A'A bloku)
-HEAT_TREND_SMOOTH = 5.0
+HEAT_TREND_SMOOTH = config.model()["topeni"]["trend_hladkost"]
 # vaha prioru na parametry tvaru (heating.PRIOR, cooling.PRIOR): odchylka o
 # 1 sm. odch. stoji PRIOR_WEIGHT * n * PRIOR_REF_RMSE^2, tj. ~1 % souctu
 # ctvercu pri typicke chybe — data rozhoduji, prior jen ukotvi ploche smery
-PRIOR_WEIGHT = 0.01
-PRIOR_REF_RMSE = 15.0
+PRIOR_WEIGHT = config.model()["fit"]["prior_vaha"]
+PRIOR_REF_RMSE = config.model()["fit"]["prior_referencni_rmse"]
 
 
 def _pv_penalty(n_c: int, n_p: int, gram_pv: float, lam: float) -> np.ndarray:
@@ -93,9 +94,9 @@ def fit_cooling_pv(df: pd.DataFrame, resid: np.ndarray,
         coef = bounded_lstsq(A, r, lb, ub, penalty=pen)
         return coef, r - A @ coef
 
-    lower = np.concatenate([cooling.LOWER, [0.0]])      # gamma >= 0
-    upper = np.concatenate([cooling.UPPER, [0.01]])
-    x0 = np.concatenate([cooling.X0, [0.004]])
+    lower = np.concatenate([cooling.LOWER, pv.LOWER])
+    upper = np.concatenate([cooling.UPPER, pv.UPPER])
+    x0 = np.concatenate([cooling.X0, pv.X0])
     sol = least_squares(lambda p: inner(p)[1], x0, bounds=(lower, upper),
                         diff_step=1e-3, x_scale=upper - lower, verbose=0)
     coef, res = inner(sol.x)
@@ -218,8 +219,8 @@ def joint(df: pd.DataFrame, bp: dict, hp: dict, cp: dict, pp: dict,
 
     x0 = np.concatenate([[hp[k] for k in heating.PARAM_NAMES],
                          [cp[k] for k in cooling.PARAM_NAMES], [pp["gamma"]]])
-    lower = np.concatenate([heating.LOWER, cooling.LOWER, [0.0]])
-    upper = np.concatenate([heating.UPPER, cooling.UPPER, [0.01]])
+    lower = np.concatenate([heating.LOWER, cooling.LOWER, pv.LOWER])
+    upper = np.concatenate([heating.UPPER, cooling.UPPER, pv.UPPER])
     x0 = np.clip(x0, lower + 1e-9, upper - 1e-9)
     names = heating.PARAM_NAMES + cooling.PARAM_NAMES + ["gamma"]
     pri = {**heating.PRIOR, **cooling.PRIOR}

@@ -49,29 +49,31 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import BSpline
 
+import config
 import kalendar
 from etl import TZ, step_hours
 
-K_PROFILE = 12  # harmonickych v dennim profilu
-K_PRAZ = 4      # harmonickych v prazdninove korekci
-KNOT_DAYS = 90  # rozestup uzlu urovnove spline
+_C = config.model()["baze"]              # hodnoty v config/model.yaml
+K_PROFILE = _C["harmonicke_profil"]      # harmonickych v dennim profilu
+K_PRAZ = _C["harmonicke_prazdniny"]      # harmonickych v prazdninove korekci
+KNOT_DAYS = _C["uroven_uzel_dni"]        # rozestup uzlu urovnove spline
 N_DAYTYPES = 4  # 0 Po-Ct, 1 patek/most, 2 sobota, 3 nedele/svatek
 # mrtve pasmo z diagnostiky (09_baze_signal): topeni dozniva ~13-14 C,
 # chlazeni nastupuje uz ~18 C (drive nez navrhovy odhad 20-24 C)
-MILD_BAND = (14.0, 18.0)   # denni prumer T mirneho dne
-PREV_BAND = (12.5, 19.5)   # denni prumer T predchoziho dne (setrvacnost)
-SMOOTH = 500.0             # vaha penalizace druhych diferenci spline koeficientu
-NIGHT_END = 10.0           # [h] konec rana po volnu (diagnostika: odchylka mizi 8-9 h)
-NIGHT_KNOT = 2.0           # [h] rozestup uzlu ranniho clenu
-K_MOST = 2                 # harmonickych v korekci mostu
+MILD_BAND = tuple(_C["mirny_den"])             # denni prumer T mirneho dne
+PREV_BAND = tuple(_C["mirny_predchozi_den"])   # denni prumer T predchoziho dne (setrvacnost)
+SMOOTH = _C["uroven_hladkost"]           # vaha penalizace druhych diferenci spline koeficientu
+NIGHT_END = _C["rano_po_volnu"]["konec"] # [h] konec rana po volnu (diagnostika: odchylka mizi 8-9 h)
+NIGHT_KNOT = _C["rano_po_volnu"]["uzel"] # [h] rozestup uzlu ranniho clenu
+K_MOST = _C["harmonicke_most"]           # harmonickych v korekci mostu
 # okna, kde se tma behem roku meni (mistni cas, vcetne letniho casu) [h]
 # rano jen do 8,5 h: pozdeji je tma jen v prosinci a lednu, tedy hlavne o
 # vanocnich prazdninach, a clen chytal vanocni propad (vysel zaporny)
-LIGHT_WINDOWS = ((3.0, 8.5), (15.0, 23.0))
-LIGHT_KNOT = 1.0           # [h] rozestup uzlu aktivity osvetleni
-LIGHT_RIDGE = 1.0          # ridge osvetleni ve fitu z mirnych dnu (relativne)
-GLOOM_WINDOW = (5.0, 21.0) # [h] okno clenu sera pres den (mistni cas)
-GLOOM_KNOT = 2.0           # [h] rozestup uzlu aktivity pri seru
+LIGHT_WINDOWS = tuple(tuple(w) for w in _C["osvetleni"]["okna"])
+LIGHT_KNOT = _C["osvetleni"]["uzel"]     # [h] rozestup uzlu aktivity osvetleni
+LIGHT_RIDGE = _C["osvetleni"]["ukotveni"]  # ridge osvetleni ve fitu z mirnych dnu (relativne)
+GLOOM_WINDOW = tuple(_C["sero"]["okno"]) # [h] okno clenu sera pres den (mistni cas)
+GLOOM_KNOT = _C["sero"]["uzel"]          # [h] rozestup uzlu aktivity pri seru
 
 SUMMER = kalendar.summer_course()   # okno prubehu leta (None = clen vypnut)
 

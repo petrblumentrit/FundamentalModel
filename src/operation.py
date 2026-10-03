@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 import backtest
+import config
 import etl
 import explain
 import intraday
@@ -28,10 +29,11 @@ import longterm
 import meteo_forecast
 
 STEP = pd.Timedelta(minutes=15)
-LINEAR_AGE = pd.Timedelta(days=1)    # stari dat linearniho prefitu, po kterem se opakuje
-SHAPE_AGE = pd.Timedelta(days=7)     # totez pro nelinearni tvar
-REVISION_REFIT = 96                  # [intervaly] zpetne zmenenych dat, od kolika se linearni cast prefituje hned
-EXPLAIN_DAYS = 14                    # [dny] historie v rozkladu predikce (rozklad.csv, vysvetleni.html)
+_C = config.model()["provoz"]        # hodnoty v config/model.yaml
+LINEAR_AGE = pd.Timedelta(days=_C["linearni_prefit_dny"])    # stari dat linearniho prefitu, po kterem se opakuje
+SHAPE_AGE = pd.Timedelta(days=_C["tvar_prefit_dny"])     # totez pro nelinearni tvar
+REVISION_REFIT = _C["revize_prefit_intervalu"]                  # [intervaly] zpetne zmenenych dat, od kolika se linearni cast prefituje hned
+EXPLAIN_DAYS = _C["rozklad_dni"]                    # [dny] historie v rozkladu predikce (rozklad.csv, vysvetleni.html)
 FC_HISTORY = pd.Timedelta(days=45)   # predpoved pocasi zpet: klouzavy bias (30 dni) a chyba pocasi v korekci
 
 

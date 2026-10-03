@@ -1,0 +1,160 @@
+# Konfigurace modelu spotreby: rucne zvolene konstanty a fyzikalni parametry.
+# Nacita src/config.py. Kalendar (svatky, mosty, Vanoce) je v kalendar.yaml.
+#
+# Fyzikalni parametry (oddily `parametry`) se odhaduji z dat; tady se pro kazdy
+# zadava:
+#   meze:  [dolni, horni] — odhad se drzi uvnitr
+#   start: vychozi hodnota pro prvni odhad
+#   prior: [stred, sm. odchylka] — slabe ukotveni spolecneho fitu (nepovinne)
+#   pevna: hodnota, na ktere se parametr drzi misto odhadu (nepovinne). Plati
+#          pro fit, backtest i provoz; ostatni parametry se odhadnou kolem ni.
+# Aktualne odhadnute hodnoty zapisuje provozni skript do provoz/parametry.yaml.
+#
+# POZOR: polozky oznacene [struktura] meni pocet koeficientu modelu — po zmene
+# je nutny novy uplny fit (predikce.py --prefit=tvar s prazdnou slozkou provoz/,
+# explore/joint_fit.py pro models/). Ostatni se projevi pri pristim prefitu.
+
+slunce:
+  zemepisna_sirka: 49.8        # [deg] stred CR
+  zemepisna_delka: 15.5        # [deg]
+  tma_stred: -2.0              # [deg] vyska slunce, kde je "pul tmy"
+  tma_sirka: 1.5               # [deg] sirka prechodu svetlo/tma (soumrak trva ~30-40 min)
+  sero_osvit: 40.0             # [W/m2] osvit, pri kterem sero pres den klesne na 1/e
+
+baze:
+  harmonicke_profil: 12        # [struktura] harmonickych v dennim profilu
+  harmonicke_prazdniny: 4      # [struktura] harmonickych v prazdninove korekci
+  harmonicke_most: 2           # [struktura] harmonickych v korekci mostu
+  uroven_uzel_dni: 90          # [struktura] rozestup uzlu urovnove spline
+  uroven_hladkost: 500.0       # vaha penalizace druhych diferenci urovne
+  mirny_den: [14.0, 18.0]            # [C] denni prumer teploty mirneho dne (mrtve pasmo)
+  mirny_predchozi_den: [12.5, 19.5]  # [C] denni prumer teploty predchoziho dne
+  rano_po_volnu:
+    konec: 10.0                # [h] [struktura] konec ranniho clenu po volnu
+    uzel: 2.0                  # [h] [struktura] rozestup uzlu
+  osvetleni:
+    okna: [[3.0, 8.5], [15.0, 23.0]]   # [h] [struktura] okna, kde se tma behem roku meni
+    uzel: 1.0                  # [h] [struktura] rozestup uzlu aktivity
+    ukotveni: 1.0              # ridge osvetleni, sera a prubehu leta ve fitu z mirnych dnu
+  sero:
+    okno: [5.0, 21.0]          # [h] [struktura] okno clenu sera pres den
+    uzel: 2.0                  # [h] [struktura] rozestup uzlu
+
+topeni:
+  harmonicke: 4                # [struktura] harmonickych v citlivosti podle hodiny
+  harmonicke_volne_dny: 4      # [struktura] harmonickych v odchylce pro volne dny
+  harmonicke_trend: 2          # [struktura] harmonickych v dennim tvaru prirustku citlivosti
+  trend_hladkost: 5.0          # penalizace zmen tempa prirustku citlivosti
+  vnitrni_teplota: 20.0        # [C] pro vetrny clen
+  cop_minimum: 0.2             # dolni mez relativniho topneho faktoru
+  parametry:
+    a:
+      popis: "vliv osvitu na pocitovou teplotu (solární zisky)"
+      jednotka: "°C na W/m²"
+      meze: [0.0, 0.05]
+      start: 0.01
+    b:
+      popis: "vliv větru na pocitovou teplotu"
+      jednotka: "°C na m/s a °C pod 20 °C"
+      meze: [0.0, 0.03]
+      start: 0.005
+    t_b:
+      popis: "bilanční teplota topení — pod ní se začíná topit"
+      jednotka: "°C"
+      meze: [10.0, 18.0]
+      start: 14.5
+      prior: [17.0, 1.5]
+    s:
+      popis: "šířka přechodu topné křivky kolem bilanční teploty"
+      jednotka: "°C"
+      meze: [0.5, 6.0]
+      start: 2.5
+      prior: [2.0, 1.0]
+    w:
+      popis: "váha okamžité teploty; zbytek nese setrvačnost budov"
+      jednotka: "–"
+      meze: [0.0, 1.0]
+      start: 0.5
+    tau:
+      popis: "časová konstanta tepelné setrvačnosti budov"
+      jednotka: "h"
+      meze: [4.0, 120.0]
+      start: 36.0
+      prior: [80.0, 20.0]
+    alpha:
+      popis: "změna topného faktoru tepelných čerpadel s venkovní teplotou"
+      jednotka: "1/°C"
+      meze: [0.0, 0.06]
+      start: 0.02
+      prior: [0.012, 0.008]
+
+chlazeni:
+  harmonicke: 4                # [struktura]
+  harmonicke_volne_dny: 4      # [struktura]
+  referencni_teplota: 25.0     # [C] teplota, pri ktere je relativni ucinnost 1
+  eer_minimum: 0.3             # dolni mez relativni ucinnosti
+  parametry:
+    a_c:
+      popis: "vliv osvitu na pocitovou teplotu pro chlazení"
+      jednotka: "°C na W/m²"
+      meze: [0.0, 0.10]
+      start: 0.02
+    t_bc:
+      popis: "bilanční teplota chlazení — nad ní se začíná chladit"
+      jednotka: "°C"
+      meze: [16.0, 26.0]
+      start: 21.0
+      prior: [18.0, 1.5]
+    s_c:
+      popis: "šířka přechodu chladicí křivky kolem bilanční teploty"
+      jednotka: "°C"
+      meze: [0.5, 6.0]
+      start: 2.0
+      prior: [2.0, 1.0]
+    w_c:
+      popis: "váha okamžité teploty; zbytek nese setrvačnost budov"
+      jednotka: "–"
+      meze: [0.0, 1.0]
+      start: 0.5
+    tau_c:
+      popis: "časová konstanta setrvačnosti budov pro chlazení"
+      jednotka: "h"
+      meze: [0.25, 72.0]
+      start: 6.0
+    alpha_c:
+      popis: "pokles účinnosti klimatizací s venkovní teplotou"
+      jednotka: "1/°C"
+      meze: [0.0, 0.06]
+      start: 0.02
+
+fve:
+  kapacita_uzel_dni: 90.0      # [struktura] rozestup rampovych prirustku kapacity (i trendu topeni)
+  kapacita_hladkost: 5.0       # penalizace zmen tempa instalaci
+  referencni_teplota: 25.0     # [C] teplota, pri ktere je relativni vykon panelu 1
+  parametry:
+    gamma:
+      popis: "pokles výkonu panelů s teplotou"
+      jednotka: "1/°C"
+      meze: [0.0, 0.01]
+      start: 0.004
+
+fit:
+  prior_vaha: 0.01             # vaha prioru: odchylka o 1 sm. odch. stoji ~1 % souctu ctvercu
+  prior_referencni_rmse: 15.0  # typicka chyba modelu, ke ktere se vaha vztahuje
+
+korekce:                       # reziduova vrstva nad modelem
+  d1:                          # predikce D+1 (src/correction.py)
+    tvar_dni: 7                # [dny] okno tvaru chyby podle casu dne
+    rozjezd_dni: 21            # minimalni pocet znamych dni pro odhad koeficientu
+    ridge: 0.001
+  intraday:                    # korekce podle horizontu (src/intraday.py)
+    posledni_intervaly: 4      # okno "posledni hodina"
+    tvar_dni: 7                # [dny] okno tvaru chyby podle casu dne
+    rozjezd_dni: 21            # doba od zacatku simulace bez korekce
+    ridge: 0.001
+
+provoz:                        # src/operation.py
+  linearni_prefit_dny: 1       # stari dat, po kterem se linearni cast prefituje
+  tvar_prefit_dny: 7           # totez pro nelinearni tvar
+  revize_prefit_intervalu: 96  # zpetne zmenenych intervalu, od kolika se linearni cast prefituje hned
+  rozklad_dni: 14              # historie v rozkladu predikce (rozklad.csv, vysvetleni.html)

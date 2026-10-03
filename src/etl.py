@@ -14,7 +14,7 @@ SRC_DIR = Path(__file__).resolve().parent
 # soubory, konfigurace kalendare ani kod, ktery je zpracovava
 CACHE = DATA_DIR / ".etl_cache.pkl"
 _CACHE_DEPS = [DATA_DIR / "baseload.csv", DATA_DIR / "Meteo15.csv",
-               SRC_DIR.parent / "config" / "kalendar.yaml",
+               SRC_DIR.parent / "config" / "kalendar.yaml", SRC_DIR.parent / "config" / "model.yaml",
                SRC_DIR / "etl.py", SRC_DIR / "kalendar.py", SRC_DIR / "sun.py"]
 
 

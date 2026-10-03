@@ -45,6 +45,7 @@ import numpy as np
 import pandas as pd
 
 import backtest
+import config
 import correction
 import etl
 import meteo_forecast
@@ -52,13 +53,14 @@ import sun
 
 HORIZON = 156      # [intervaly] 39 h: od D 09:00 do konce D+1
 DAY = 96           # intervalu za 24 h (posun o den v UTC; kolem zmeny casu o hodinu vedle)
-LAST = 4           # [intervaly] okno "posledni hodina"
-TOD_DAYS = 7       # [dny] okno tvaru chyby podle casu dne
+_C = config.model()["korekce"]["intraday"]   # hodnoty v config/model.yaml
+LAST = _C["posledni_intervaly"]   # [intervaly] okno "posledni hodina"
+TOD_DAYS = _C["tvar_dni"]         # [dny] okno tvaru chyby podle casu dne
 FEATURES = ("x1", "xden", "vcera", "tyden", "x1_w", "xden_w", "vcera_w", "tyden_w")
 W_DAYS = TOD_DAYS + 2   # [dny] historie, na ktere se pocita model s predpovedi pocasi
-WARMUP = 21 * DAY  # [intervaly] doba od zacatku simulace, nez se korekce zacne pouzivat
+WARMUP = _C["rozjezd_dni"] * DAY  # [intervaly] doba od zacatku simulace, nez se korekce zacne pouzivat
 MIN_ROWS = 21      # minimalni pocet znamych vydani na danem horizontu
-RIDGE = 1e-3       # relativne ke stope X'X
+RIDGE = _C["ridge"]       # relativne ke stope X'X
 METEO_COLS = ("temp", "sun", "wind", "sero")
 
 
