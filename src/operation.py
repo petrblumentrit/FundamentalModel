@@ -22,6 +22,7 @@ import pandas as pd
 
 import backtest
 import etl
+import explain
 import intraday
 import longterm
 import meteo_forecast
@@ -30,6 +31,7 @@ STEP = pd.Timedelta(minutes=15)
 LINEAR_AGE = pd.Timedelta(days=1)    # stari dat linearniho prefitu, po kterem se opakuje
 SHAPE_AGE = pd.Timedelta(days=7)     # totez pro nelinearni tvar
 REVISION_REFIT = 96                  # [intervaly] zpetne zmenenych dat, od kolika se linearni cast prefituje hned
+EXPLAIN_DAYS = 14                    # [dny] historie v rozkladu predikce (rozklad.csv, vysvetleni.html)
 FC_HISTORY = pd.Timedelta(days=45)   # predpoved pocasi zpet: klouzavy bias (30 dni) a chyba pocasi v korekci
 
 
@@ -73,8 +75,13 @@ def weather_forecast(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def forecast(df: pd.DataFrame, params: tuple, meteo: pd.DataFrame,
-             coefs: pd.DataFrame | None = None) -> pd.DataFrame:
-    """Predikce od konce dat: slozky modelu, korekce a vysledek po 15 min."""
+             coefs: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Predikce od konce dat a rozklad na slozky (src/explain.py).
+
+    Vraci (predikce, rozklad): predikce = cile od konce dat po 15 min (slozky,
+    model, korekce, vysledek); rozklad = totez i pro poslednich EXPLAIN_DAYS
+    dni pred koncem dat (model s namerenym pocasim proti skutecnosti, spotreba
+    ocistena o pocasi, vlivy osvitu, vetru a setrvacnosti)."""
     s = end_of_data(df)
     fr = longterm.frame(df, s, days=2).iloc[:longterm.HISTORY_DAYS * intraday.DAY + intraday.HORIZON].copy()
     pos = np.arange(len(fr))
@@ -90,17 +97,23 @@ def forecast(df: pd.DataFrame, params: tuple, meteo: pd.DataFrame,
     pw = backtest.components(fr, params)["predikce"].to_numpy()
     for c in intraday.METEO_COLS:
         fr[c] = np.where(pos < i, measured[c], future[c])
-    comp = backtest.components(fr, params)
-    p = comp["predikce"].to_numpy()
+    full = explain.decompose(fr, params)
+    p = full["model"].to_numpy()
     j = np.flatnonzero((pos >= i) & ~np.isnan(p))
-    out = comp.iloc[j].rename(columns={"predikce": "model"})
-    out.insert(0, "horizont_h", (j - i + 1) / 4)
-    out.insert(0, "timestamp_mistni", out.index.tz_convert(etl.TZ))
-    out["korekce"] = 0.0
+    full["korekce"] = np.nan
     if coefs is not None:
         x = {**intraday.inputs(y - p, i, j),
              **{k + "_w": v for k, v in intraday.inputs(p - pw, i, j).items()}}
-        out["korekce"] = np.asarray(intraday.apply(coefs.iloc[j - i], x), float)
-    out["predikce"] = out["model"] + out["korekce"]
-    out.index.name = "timestamp_utc"
-    return out
+        full.iloc[j, full.columns.get_loc("korekce")] = np.asarray(intraday.apply(coefs.iloc[j - i], x), float)
+    else:
+        full.iloc[j, full.columns.get_loc("korekce")] = 0.0
+    full["predikce"] = full["model"] + full["korekce"].fillna(0.0)
+    full.insert(0, "skutecnost", y)
+    full["ocistena"] = explain.cleaned(y, full)
+    full = full.join(explain.weather_effects(fr, params))
+    full.insert(0, "horizont_h", np.where(pos >= i, (pos - i + 1) / 4, np.nan))
+    full.insert(0, "timestamp_mistni", full.index.tz_convert(etl.TZ))
+    full.index.name = "timestamp_utc"
+    keep = np.concatenate([np.arange(max(i - EXPLAIN_DAYS * intraday.DAY, 0), i), j])
+    out = full.iloc[j].drop(columns=["skutecnost", "ocistena"])
+    return out, full.iloc[keep]

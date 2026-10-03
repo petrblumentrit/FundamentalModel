@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rozklad predikce spotřeby</title>
+<script>/*__PLOTLY__*/</script>
+<style>
+:root {
+  color-scheme: light;
+  --surface: #fcfcfb; --surface-2: #f3f2ef; --border: #e1e0d9;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
+  --grid: #e1e0d9; --baseline: #c3c2b7;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+  --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface: #1a1a19; --surface-2: #242423; --border: #383835;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #333331; --baseline: #52514e;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+    --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1a1a19; --surface-2: #242423; --border: #383835;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #898781;
+  --grid: #333331; --baseline: #52514e;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+  --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface); color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1400px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 20px; margin: 0 0 4px; font-weight: 600; }
+h2 { font-size: 15px; font-weight: 600; margin: 28px 0 4px; }
+.sub, .lead { color: var(--text-secondary); margin: 0 0 12px; max-width: 1000px; }
+.sub { margin-bottom: 20px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.tile { background: var(--surface-2); border-radius: 8px; padding: 12px 14px; }
+.tile .k { color: var(--text-secondary); font-size: 12px; }
+.tile .v { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .m { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.controls span { color: var(--text-secondary); font-size: 12px; margin-right: 4px; }
+button { font: inherit; font-size: 13px; color: var(--text-primary); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--text-muted); }
+button[aria-pressed="true"] { border-color: var(--text-primary); }
+.chart { width: 100%; }
+#c1 { height: 480px; } #c2, #c3 { height: 280px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 8px 20px; }
+.grid h3 { font-size: 13px; font-weight: 600; margin: 12px 0 0; }
+.grid p { color: var(--text-muted); font-size: 12px; margin: 0; }
+.small { height: 250px; width: 100%; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 13px; }
+th, td { padding: 5px 8px; text-align: right; border-bottom: 1px solid var(--border); }
+th { color: var(--text-secondary); font-weight: 500; }
+th:first-child, td:first-child, td.txt, th.txt { text-align: left; }
+td.txt { color: var(--text-secondary); }
+tr.sum td { font-weight: 600; border-top: 1px solid var(--baseline); }
+td i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; }
+.wrap { overflow-x: auto; }
+.note { color: var(--text-muted); font-size: 12px; margin-top: 16px; max-width: 1000px; }
+@media (max-width: 800px) { #c1 { height: 400px; } .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Rozklad predikce spotřeby</h1>
+  <p class="sub" id="sub"></p>
+  <div class="tiles" id="tiles"></div>
+
+  <h2>Z čeho se spotřeba skládá</h2>
+  <p class="lead">Plochy se sčítají odspodu: rozvrh a kalendář, topení, chlazení, osvětlení za tmy a svícení při zatažené obloze. Výroba FVE jde pod nulu, protože měřenou spotřebu snižuje. Čára modelu je součet všech ploch. Kliknutím do grafu vyberete čas pro tabulku pod ním.</p>
+  <div class="controls" id="ranges"><span>Rozsah:</span></div>
+  <div id="c1" class="chart"></div>
+
+  <h2 id="pick-title">Rozklad ve vybraném čase</h2>
+  <div class="wrap"><table id="pick"><thead><tr><th>Složka</th><th>Hodnota</th><th class="txt">Co vyjadřuje</th></tr></thead><tbody></tbody></table></div>
+
+  <h2>Kalendářní odchylky, korekce a chyba modelu</h2>
+  <p class="lead">Menší členy, které v horním grafu splývají s rozvrhem. Chyba modelu je skutečnost minus model se změřeným počasím; korekce je odhad této chyby pro budoucí intervaly.</p>
+  <div id="c2" class="chart"></div>
+
+  <h2>Vliv osvitu, větru a setrvačnosti na topení a chlazení</h2>
+  <p class="lead">Tyto vlivy působí uvnitř topné a chladicí křivky, proto nejsou samostatným sčítancem. Každá čára je rozdíl dvou výpočtů (s vlivem a bez něj); navzájem ani s ostatními složkami se nesčítají.</p>
+  <div id="c3" class="chart"></div>
+
+  <h2>Křivky modelu</h2>
+  <p class="lead" id="curves-lead"></p>
+  <div class="grid" id="curves"></div>
+
+  <div class="wrap" id="params-wrap" hidden>
+    <h2>Fyzikální parametry</h2>
+    <table id="params"><thead><tr><th>Parametr</th><th>Hodnota</th><th class="txt">Jednotka</th><th class="txt">Význam</th><th class="txt">Původ</th></tr></thead><tbody></tbody></table>
+  </div>
+  <p class="note" id="note"></p>
+</main>
+<script>
+const D = /*__DATA__*/null;
+const S = D.s, M = D.meta, C = D.curves;
+const fmt = (v, d = 1) => v === null || v === undefined ? "–"
+  : v.toLocaleString("cs-CZ", { minimumFractionDigits: d, maximumFractionDigits: d });
+const sgn = (v, d = 1) => v === null || v === undefined ? "–" : (v >= 0 ? "+" : "−") + fmt(Math.abs(v), d);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
+const add = (...a) => a[0].map((_, i) => a.every(x => x[i] !== null) ? a.reduce((s, x) => s + x[i], 0) : null);
+
+// rozvrh a kalendar = cast baze nezavisla na pocasi a slunci
+const KAL = add(S.uroven, S.profil, S.prazdniny, S.po_volnu, S.mosty, S.obdobi);
+const ERR = S.skutecnost.map((v, i) => v === null ? null : v - S.model[i]);
+// plochy grafu 1: klic, popisek, barva, co vyjadruje
+const AREAS = [
+  ["kal", "Rozvrh a kalendář", "--series-1", KAL, "úroveň portfolia a denní profil podle typu dne, včetně prázdnin, mostů a svátků"],
+  ["topeni", "Topení", "--series-2", S.topeni, "spotřeba na vytápění podle teploty (se setrvačností budov), osvitu a větru"],
+  ["chlazeni", "Chlazení", "--series-3", S.chlazeni, "spotřeba klimatizací podle teploty"],
+  ["osvetleni", "Osvětlení za tmy", "--series-4", S.osvetleni, "svícení podle východu a západu slunce, ne podle hodin"],
+  ["sero", "Svícení při zatažené obloze", "--series-5", S.sero, "spotřeba navíc ve dne při nízkém osvitu (těžká oblačnost, mlha)"],
+];
+const FVE = ["fve", "Výroba FVE", "--series-6", S.fve, "výroba střešních elektráren v portfoliu; měřenou spotřebu snižuje"];
+
+const iEnd = D.t.findIndex(t => t >= M.konec);          // prvni predikovany interval
+document.getElementById("sub").textContent =
+  `Data do ${M.konec_text}, predikce na ${fmt(M.horizont, 0)} h dopředu (${M.do_text}). `
+  + `Parametry modelu: lineární část z dat do ${M.data_do}, tvar křivek do ${M.tvar_do}.`;
+
+const cz = t => `${t.slice(8, 10)}.${t.slice(5, 7)}. ${t.slice(11)}`;
+const at = h => { const i = Math.min(iEnd + h * 4 - 1, D.t.length - 1); return [S.predikce[i], D.t[i]]; };
+let iMax = iEnd; for (let i = iEnd; i < D.t.length; i++) if (S.predikce[i] > S.predikce[iMax]) iMax = i;
+const last = iEnd - 1;
+const tiles = [
+  ["Poslední změřená spotřeba", fmt(S.skutecnost[last]), `${D.t[last].slice(11)}, model ${fmt(S.model[last])}`],
+  ["Predikce na příští čtvrthodinu", fmt(S.predikce[iEnd]), `model ${fmt(S.model[iEnd])}, korekce ${sgn(S.korekce[iEnd])}`],
+  ["Predikce za 3 hodiny", fmt(at(3)[0]), cz(at(3)[1])],
+  ["Maximum predikce", fmt(S.predikce[iMax], 0), cz(D.t[iMax])],
+];
+const tEl = document.getElementById("tiles");
+for (const [k, v, m] of tiles) {
+  const d = document.createElement("div"); d.className = "tile";
+  for (const [c, x] of [["k", k], ["v", v], ["m", m]]) { const e = document.createElement("div"); e.className = c; e.textContent = x; d.append(e); }
+  tEl.append(d);
+}
+
+function axis() {
+  const ink = css("--text-secondary"), muted = css("--text-muted"), base = css("--baseline");
+  return { gridcolor: css("--grid"), linecolor: base, zerolinecolor: base, tickfont: { color: muted, size: 11 },
+    title: { font: { color: ink, size: 12 } } };
+}
+function frame(extra) {
+  return { paper_bgcolor: css("--surface"), plot_bgcolor: css("--surface"),
+    font: { family: "system-ui, -apple-system, Segoe UI, sans-serif", color: css("--text-primary") },
+    margin: { l: 56, r: 16, t: 8, b: 36 }, hovermode: "x unified",
+    hoverlabel: { bgcolor: css("--surface-2"), bordercolor: css("--border"), font: { color: css("--text-primary") } },
+    legend: { orientation: "h", traceorder: "normal", y: 1.02, yanchor: "bottom", x: 0, font: { color: css("--text-secondary"), size: 12 } },
+    ...extra };
+}
+const tAxis = () => ({ ...axis(), range: view, hoverformat: "%d.%m.%Y %H:%M", showspikes: true, spikemode: "across",
+  spikethickness: 1, spikecolor: css("--text-muted"), spikedash: "solid",
+  tickformatstops: [{ dtickrange: [null, 86400000], value: "%H:%M<br>%d.%m." }, { dtickrange: [86400000, null], value: "%d.%m." }] });
+// svisla cara konce dat + podbarveni predikce
+const endMark = () => ({
+  shapes: [
+    { type: "rect", xref: "x", yref: "paper", x0: M.konec, x1: D.t[D.t.length - 1], y0: 0, y1: 1, fillcolor: rgba(css("--text-muted"), 0.08), line: { width: 0 }, layer: "below" },
+    { type: "line", xref: "x", yref: "paper", x0: M.konec, x1: M.konec, y0: 0, y1: 1, line: { color: css("--text-muted"), width: 1, dash: "dot" } }],
+  annotations: [{ x: M.konec, y: 1, xref: "x", yref: "paper", text: "konec dat · predikce →", showarrow: false,
+    xanchor: "left", yanchor: "top", xshift: 4, font: { size: 11, color: css("--text-muted") } }] });
+
+const parse = s => new Date(s.replace(" ", "T"));
+const p2 = x => String(x).padStart(2, "0");
+const fmtT = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+const back = days => { const d = parse(M.konec); d.setHours(d.getHours() - days * 24); return fmtT(d) < D.t[0] ? D.t[0] : fmtT(d); };
+const endX = D.t[D.t.length - 1];
+let view = [back(3), endX];
+
+function traces1() {
+  const out = [], surf = css("--surface");
+  for (const [, name, col, y] of AREAS)
+    out.push({ x: D.t, y, name, type: "scatter", mode: "lines", stackgroup: "plus", line: { color: surf, width: 1.5 },
+      fillcolor: rgba(css(col), 0.85), hovertemplate: "%{y:.1f}" });
+  out.push({ x: D.t, y: FVE[3], name: FVE[1], type: "scatter", mode: "lines", stackgroup: "minus", line: { color: surf, width: 1.5 },
+    fillcolor: rgba(css(FVE[2]), 0.85), hovertemplate: "%{y:.1f}" });
+  out.push({ x: D.t, y: S.model, name: "Model", type: "scatter", mode: "lines", line: { color: css("--series-7"), width: 2 }, hovertemplate: "%{y:.1f}" });
+  out.push({ x: D.t, y: S.predikce.map((v, i) => i >= iEnd ? v : null), name: "Predikce (model + korekce)", type: "scatter", mode: "lines",
+    line: { color: css("--series-8"), width: 2 }, hovertemplate: "%{y:.1f}" });
+  out.push({ x: D.t, y: S.skutecnost, name: "Skutečnost", type: "scatter", mode: "lines", line: { color: css("--text-primary"), width: 1.5 }, hovertemplate: "%{y:.1f}" });
+  return out;
+}
+const line = (y, name, col, extra = {}) => ({ x: D.t, y, name, type: "scatter", mode: "lines",
+  line: { color: css(col), width: 2, ...extra }, hovertemplate: "%{y:+.1f}" });
+const traces2 = () => [
+  line(S.prazdniny, "Prázdniny a průběh léta", "--series-1"),
+  line(add(S.mosty, S.obdobi), "Mosty a zvláštní období (Vánoce)", "--series-2"),
+  line(S.po_volnu, "Ráno po volnu", "--series-3"),
+  line(S.korekce, "Korekce predikce", "--series-8"),
+  line(ERR, "Chyba modelu (skutečnost − model)", "--text-primary", { width: 1.2 }),
+];
+const traces3 = () => [
+  line(S.topeni_osvit, "Topení: solární zisky", "--series-4"),
+  line(S.topeni_vitr, "Topení: vítr", "--series-1"),
+  line(S.topeni_setrvacnost, "Topení: setrvačnost budov", "--series-2"),
+  line(S.chlazeni_osvit, "Chlazení: osvit", "--series-5"),
+  line(S.chlazeni_setrvacnost, "Chlazení: setrvačnost budov", "--series-3"),
+];
+const CFG = { responsive: true, displaylogo: false, locale: "cs", modeBarButtonsToRemove: ["select2d", "lasso2d", "autoScale2d"] };
+const charts = [
+  ["c1", traces1, () => frame({ xaxis: tAxis(), yaxis: { ...axis(), title: { ...axis().title, text: "Spotřeba" }, fixedrange: true }, ...endMark() })],
+  ["c2", traces2, () => frame({ xaxis: tAxis(), yaxis: { ...axis(), title: { ...axis().title, text: "Odchylka" }, fixedrange: true }, ...endMark() })],
+  ["c3", traces3, () => frame({ xaxis: tAxis(), yaxis: { ...axis(), title: { ...axis().title, text: "Rozdíl" }, fixedrange: true }, ...endMark() })],
+];
+const els = charts.map(([id, tr, ly]) => { const el = document.getElementById(id); Plotly.newPlot(el, tr(), ly(), CFG); return el; });
+
+// spolecna osa x: zoom v jednom grafu posune vsechny
+let syncing = false;
+function setView(r) {
+  view = [String(r[0]), String(r[1])];
+  syncing = true;
+  Promise.all(els.map(el => Plotly.relayout(el, { "xaxis.range": view }))).then(() => { syncing = false; });
+}
+els.forEach(el => el.on("plotly_relayout", ev => {
+  if (syncing) return;
+  if (ev["xaxis.range[0]"]) setView([ev["xaxis.range[0]"], ev["xaxis.range[1]"]]);
+  else if (ev["xaxis.autorange"]) setView([D.t[0], endX]);
+}));
+const rEl = document.getElementById("ranges"), btns = [];
+for (const [label, a] of [["Jen predikce", 0.25], ["3 dny", 3], ["7 dní", 7], ["14 dní", 14]]) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = label;
+  b.setAttribute("aria-pressed", String(a === 3));
+  b.onclick = () => { btns.forEach(x => x.setAttribute("aria-pressed", "false")); b.setAttribute("aria-pressed", "true"); setView([back(a), endX]); };
+  btns.push(b); rEl.append(b);
+}
+
+// tabulka rozkladu ve vybranem case
+const ROWS = [
+  ["Úroveň portfolia", "uroven", "--series-1", "pomalu se měnící základ spotřeby (velikost portfolia, sezónní pohyb)"],
+  ["Denní profil", "profil", "--series-1", "odchylka od úrovně podle hodiny a typu dne (pracovní, pátek, sobota, neděle)"],
+  ["Prázdniny a průběh léta", "prazdniny", "--series-1", "letní školní volno a dovolené"],
+  ["Ráno po volnu", "po_volnu", "--series-1", "pomalejší rozjezd prvního pracovního dne po víkendu nebo svátku"],
+  ["Mosty", "mosty", "--series-1", "pracovní den sevřený mezi volnem"],
+  ["Zvláštní období", "obdobi", "--series-1", "Vánoce a dny kolem nich"],
+  ...AREAS.slice(1).map(a => [a[1], a[0], a[2], a[4]]),
+  [FVE[1], "fve", FVE[2], FVE[4]],
+];
+function pick(i) {
+  const tb = document.querySelector("#pick tbody"); tb.textContent = "";
+  const future = i >= iEnd;
+  document.getElementById("pick-title").textContent =
+    `Rozklad v ${D.t[i].slice(8, 10)}.${D.t[i].slice(5, 7)}. ${D.t[i].slice(11)} (${future ? "predikce" : "minulost, změřené počasí"})`;
+  const row = (name, v, text, col, cls) => {
+    const tr = document.createElement("tr"); if (cls) tr.className = cls;
+    const a = document.createElement("td");
+    if (col) { const sw = document.createElement("i"); sw.style.background = `var(${col})`; a.append(sw); }
+    a.append(document.createTextNode(name));
+    const b = document.createElement("td"); b.textContent = v;
+    const c = document.createElement("td"); c.className = "txt"; c.textContent = text;
+    tr.append(a, b, c); tb.append(tr);
+  };
+  for (const [name, key, col, text] of ROWS) {
+    const v = S[key][i];
+    if (key !== "uroven" && Math.abs(v) < 0.05) continue;       // nulove cleny nezobrazovat
+    row(name, key === "uroven" ? fmt(v) : sgn(v), text, col);
+  }
+  row("Model", fmt(S.model[i]), "součet složek", null, "sum");
+  if (future) {
+    row("Korekce", sgn(S.korekce[i]), "odhad chyby modelu z posledních hodin a dnů a z chyby předpovědi počasí");
+    row("Predikce", fmt(S.predikce[i]), "model + korekce", null, "sum");
+  } else {
+    row("Skutečnost", fmt(S.skutecnost[i]), `chyba modelu ${sgn(ERR[i])}`, null, "sum");
+    row("Spotřeba očištěná o počasí", fmt(S.ocistena[i]), "skutečnost bez topení, chlazení, FVE a svícení při zatažené obloze");
+  }
+}
+els.forEach(el => el.on("plotly_click", ev => { const i = D.t.indexOf(String(ev.points[0].x).slice(0, 16)); if (i >= 0) pick(i); }));
+pick(iEnd);
+
+// krivky modelu — male grafy
+const DT = ["Po–Čt", "pátek, den před volnem", "sobota, volno před volnem", "neděle, volno před prací"];
+const DTC = ["--series-1", "--series-2", "--series-3", "--series-4"];
+const SMALL = [
+  ["Odezva na teplotu", "ustálený stav bez osvitu a větru, průměr pracovního dne", "Venkovní teplota [°C]", C.teplota,
+    [["Topení", C.topeni_T, "--series-2"], ["Chlazení", C.chlazeni_T, "--series-3"]]],
+  ["Topná citlivost podle hodiny", "spotřeba na 1 °C pod bilanční teplotou", "Hodina dne", C.hodina, C.k_topeni.map((y, k) => [DT[k], y, DTC[k]])],
+  ["Chladicí citlivost podle hodiny", "spotřeba na 1 °C nad bilanční teplotou", "Hodina dne", C.hodina, C.k_chlazeni.map((y, k) => [DT[k], y, DTC[k]])],
+  ["Denní profil rozvrhu", "odchylka od úrovně portfolia", "Hodina dne", C.hodina, C.profil.map((y, k) => [DT[k], y, DTC[k]])],
+  ["Svícení podle hodiny", "spotřeba při plné tmě a při zcela zatažené obloze ve dne", "Hodina dne", C.hodina,
+    [["Osvětlení za tmy", C.osvetleni, "--series-4"], ["Při zatažené obloze", C.sero, "--series-5"]]],
+  ["Úroveň portfolia v čase", "základ spotřeby bez počasí a denního profilu", "", C.tyden, [["Úroveň", C.uroven, "--series-1"]]],
+  ["Topná citlivost v čase", "průměr dne, spotřeba na 1 °C", "", C.tyden, [["Topná citlivost", C.topna_citlivost, "--series-2"]]],
+  ["Špičková výroba FVE v čase", `při osvitu ${fmt(M.fve_osvit, 0)} W/m²`, "", C.tyden, [["Špička FVE", C.fve_spicka, "--series-6"]]],
+];
+document.getElementById("curves-lead").textContent = `Stav modelu k ${C.den}. Lineární koeficienty modelu jsou koeficienty těchto křivek; samy o sobě čitelné nejsou.`;
+const gEl = document.getElementById("curves"), smalls = [];
+for (const [title, sub, xt, x, series] of SMALL) {
+  const box = document.createElement("div");
+  const h = document.createElement("h3"); h.textContent = title;
+  const p = document.createElement("p"); p.textContent = sub;
+  const el = document.createElement("div"); el.className = "small";
+  box.append(h, p, el); gEl.append(box);
+  const tr = () => series.map(([name, y, col]) => ({ x, y, name, type: "scatter", mode: "lines", line: { color: css(col), width: 2 }, hovertemplate: "%{y:.1f}" }));
+  const ly = () => frame({ margin: { l: 48, r: 12, t: 4, b: xt ? 40 : 28 }, showlegend: series.length > 1,
+    xaxis: { ...axis(), title: { ...axis().title, text: xt }, ...(xt === "Hodina dne" ? { dtick: 3, range: [0, 24] } : {}) }, yaxis: axis() });
+  smalls.push([el, tr, ly]);
+}
+// kreslit az po vlozeni vsech boxu: sirka sloupcu mrizky se do te doby meni
+smalls.forEach(([el, tr, ly]) => Plotly.newPlot(el, tr(), ly(), { ...CFG, displayModeBar: false }));
+
+if (M.params && M.params.length) {
+  document.getElementById("params-wrap").hidden = false;
+  const tb = document.querySelector("#params tbody");
+  for (const p of M.params) {
+    const tr = document.createElement("tr");
+    for (const [v, cls] of [[p.nazev, ""], [p.hodnota, ""], [p.jednotka, "txt"], [p.popis, "txt"], [p.zdroj, "txt"]]) {
+      const td = document.createElement("td"); if (cls) td.className = cls; td.textContent = v; tr.append(td);
+    }
+    tb.append(tr);
+  }
+}
+document.getElementById("note").textContent =
+  "Rozklad je přiřazení podle modelu, ne měření: složky se sdíleným vstupem (osvit u FVE, svícení a solárních zisků; večerní špička u osvětlení a topení) "
+  + "od sebe odděluje jen struktura modelu. V minulosti počítá model se změřeným počasím, od konce dat s předpovědí. "
+  + "Tahem myší graf přiblížíte (všechny tři časové grafy se posouvají společně), dvojklik vrátí celý rozsah, klik do legendy složku skryje.";
+
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  charts.forEach(([, tr, ly], k) => Plotly.react(els[k], tr(), ly()));
+  smalls.forEach(([el, tr, ly]) => Plotly.react(el, tr(), ly()));
+});
+</script>
+</body>
+</html>
