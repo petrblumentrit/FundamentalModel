@@ -690,3 +690,22 @@ Rozklad je přiřazení podle modelu, ne měření: členy se sdíleným regreso
 Vedlejší pozorování z tabulky parametrů: `a_c` a `alpha_c` (osvit a účinnost u chlazení) leží na dolní mezi 0 a `gamma` (teplotní koeficient FVE) při fitu ze všech dat na horní mezi 0,01 — data je neurčují, případně horní mez `gamma` omezuje.
 
 **Další kroky:** backtest s pevnou hodnotou jako měřítko dopadu zásahu (`explore/backtest.py` pevné hodnoty z konfigurace už respektuje); kalibrace předpovědi počasí do konfigurace; prověřit `gamma` na mezi.
+
+### 2026-10-03 — teplotní koeficient FVE na mezi (krok 39)
+
+Tabulka parametrů ukázala `gamma` na horní mezi 0,01 (fyzikálně ~0,004 na °C teploty článku). Test `explore/fve_teplota_test.py`: plný fit (tvar + lineární část, hodinová data, všechna data) s `gamma` drženou na řadě hodnot a s uvolněnou mezí.
+
+| gamma | RMSE | RMSE za dne | špička FVE | a (osvit u topení) | T_bc |
+|---|---|---|---|---|---|
+| 0 | 11,356 | 12,720 | 58,5 | 0,0147 | 17,84 |
+| 0,004 | 11,353 | 12,712 | 57,6 | 0,0143 | 17,82 |
+| 0,010 | 11,351 | 12,706 | 56,1 | 0,0137 | 17,80 |
+| 0,0123 (volná, mez 0,05) | 11,351 | 12,706 | 55,6 | 0,0135 | 17,79 |
+| 0,020 | 11,351 | 12,710 | 53,6 | 0,0129 | 17,77 |
+| 0,030 | 11,356 | 12,726 | 51,1 | 0,0121 | 17,74 |
+
+- **`gamma` není z dat určená**: přes celý rozsah 0–0,03 se RMSE mění o 0,006 (0,05 %). Poloha na mezi není signál, že koeficient něco přebírá — profil je plochý a optimum 0,012 je uvnitř šumu.
+- Ostatní parametry se nehýbou (T_b, τ, T_bc na setiny); kompenzuje jen kapacita FVE (špička 58,5 → 51,1) a mírně solární zisky u topení. `a_c` a `alpha_c` zůstávají na nule při každé hodnotě — s `gamma` nesouvisí.
+- Rezidua za dne podle teploty a osvitu jsou pro `gamma` = 0,004 a volnou prakticky stejná (rozdíly do 1,2). Jediná výraznější buňka — mráz se sluncem 300–600 W/m², −6,3 resp. −5,1 — má málo hodin (pásmo pod 0 °C celkem 188 h) a na `gamma` nezávisí.
+
+**Závěr:** fyzikální hodnota 0,004 stojí 0,002 RMSE; držet ji jako `pevna` je čistší než odhad na mezi (špička FVE pak vychází 57,6 místo 56,1).
